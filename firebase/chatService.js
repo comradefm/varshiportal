@@ -25,18 +25,29 @@ export const sendMessage = async (roomId, senderId, messageText) => {
 
 export const subscribeToMessages = (roomId, callback) => {
   const messagesRef = collection(db, "messages");
+  // Removed orderBy to avoid requiring a composite index in Firestore.
+  // We will sort them on the client side instead.
   const q = query(
     messagesRef,
-    where("room_id", "==", roomId),
-    orderBy("timestamp", "asc")
+    where("room_id", "==", roomId)
   );
 
   const unsubscribe = onSnapshot(q, (snapshot) => {
-    const messages = snapshot.docs.map((doc) => ({
+    let messages = snapshot.docs.map((doc) => ({
       message_id: doc.id,
       ...doc.data(),
     }));
+
+    // Client-side sort by timestamp
+    messages.sort((a, b) => {
+      const timeA = a.timestamp?.toMillis() || Date.now();
+      const timeB = b.timestamp?.toMillis() || Date.now();
+      return timeA - timeB; // Ascending
+    });
+
     callback(messages);
+  }, (error) => {
+    console.error("Firestore subscription error:", error);
   });
 
   return unsubscribe;

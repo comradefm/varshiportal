@@ -106,6 +106,36 @@ export default function Pairing() {
     );
   }
 
+  // If room exists but waiting for a partner
+  if (roomData && roomData.user_1 && !roomData.user_2) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col">
+        <header className="sticky top-0 z-20 bg-[#0a0a0f]/80 backdrop-blur border-b border-[#27272a] px-5 py-4 flex items-center gap-4">
+          <Link href="/dashboard" className="w-9 h-9 rounded-xl bg-[#1c1c27] flex items-center justify-center hover:bg-[#27272a] transition">
+            <svg className="w-5 h-5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </Link>
+          <h1 className="font-semibold text-white">Connection Setup</h1>
+        </header>
+
+        <main className="flex-1 flex flex-col items-center justify-center px-5 py-10 animate-fade-in">
+          <div className="w-20 h-20 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center mb-6">
+            <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Waiting for partner...</h2>
+          <p className="text-sm text-zinc-500 text-center mb-6">Share this code so they can join your room.</p>
+          
+          <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-2xl px-8 py-5 mb-8 text-center ring-1 ring-white/5">
+            <p className="text-xs text-zinc-400 mb-2 uppercase tracking-wider font-semibold">Your Room Code</p>
+            <p className="font-mono font-bold text-indigo-400 text-3xl tracking-[0.2em]">{roomData.room_code}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Otherwise, user needs to create or join a room
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
       {/* Header */}
@@ -145,30 +175,20 @@ export default function Pairing() {
             </div>
             <h2 className="font-semibold text-white">Create Room</h2>
           </div>
-          <p className="text-sm text-zinc-500 mb-4">Generate a secure room code for your partner to join.</p>
+          <p className="text-sm text-zinc-500 mb-6">Generate a secure room code for your partner to join.</p>
 
-          {roomCode && (
-            <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl px-4 py-3 mb-4 text-center">
-              <p className="text-xs text-zinc-500 mb-1">Your Room Code</p>
-              <p className="font-mono font-bold text-indigo-400 text-2xl tracking-widest">{roomCode}</p>
-              <p className="text-xs text-zinc-600 mt-1">Share this with your partner</p>
-            </div>
-          )}
-
-          {!userData.room_id && (
-            <button
-              id="create-room-btn"
-              onClick={handleCreateRoom}
-              disabled={creating}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-medium text-sm transition flex items-center justify-center gap-2"
-            >
-              {creating ? (
-                <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Creating…</>
-              ) : (
-                "Create Room"
-              )}
-            </button>
-          )}
+          <button
+            id="create-room-btn"
+            onClick={handleCreateRoom}
+            disabled={creating}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-medium text-sm transition flex items-center justify-center gap-2"
+          >
+            {creating ? (
+              <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Creating…</>
+            ) : (
+              "Create Room"
+            )}
+          </button>
         </div>
 
         {/* Divider */}
@@ -188,7 +208,7 @@ export default function Pairing() {
             </div>
             <h2 className="font-semibold text-white">Join Room</h2>
           </div>
-          <p className="text-sm text-zinc-500 mb-4">Enter the room code your partner shared with you.</p>
+          <p className="text-sm text-zinc-500 mb-6">Enter the room code your partner shared with you.</p>
           <div className="flex gap-2">
             <input
               id="join-code-input"
