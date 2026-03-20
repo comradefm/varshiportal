@@ -1,5 +1,5 @@
 // Utility: Hash a PIN using Web Crypto API (SHA-256)
-export async function hashPin(pin) {
+export async function hashPin(pin: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(pin);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -9,7 +9,7 @@ export async function hashPin(pin) {
 }
 
 // Verify a raw PIN against a stored hash
-export async function verifyPin(pin, storedHash) {
+export async function verifyPin(pin: string, storedHash: string): Promise<boolean> {
   const hash = await hashPin(pin);
   return hash === storedHash;
 }
