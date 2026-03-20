@@ -49,7 +49,7 @@ export default function About() {
     <div className="min-h-screen bg-[#0a0a0f] text-white">
       {showPin && (
         <PinUnlock
-          storedHash={(userData as any)?.pin_hash}s
+          storedHash={(userData as any)?.pin_hash}
           onUnlock={handleUnlock}
           onClose={() => setShowPin(false)}
         />
