@@ -84,9 +84,19 @@ export const getUserRooms = async (userId) => {
   try {
     const { getUserData } = await import("./firestoreService");
     const userData = await getUserData(userId);
-    if (!userData || !userData.rooms || userData.rooms.length === 0) return [];
+    if (!userData) return [];
 
-    const roomPromises = userData.rooms.map(id => getRoomData(id));
+    let roomsArray = userData.rooms || [];
+
+    // Legacy migration: automatically push the old single room_id to the new rooms array
+    if (userData.room_id && typeof userData.room_id === 'string' && roomsArray.length === 0) {
+      roomsArray = [userData.room_id];
+      await updateDoc(doc(db, "users", userId), { rooms: roomsArray });
+    }
+
+    if (roomsArray.length === 0) return [];
+
+    const roomPromises = roomsArray.map(id => getRoomData(id));
     const rooms = await Promise.all(roomPromises);
     
     // Sort by created_at descending if possible
