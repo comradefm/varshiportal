@@ -1,18 +1,300 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import {
+  getCourses,
+  getAssignments,
+  addAssignment,
+  toggleAssignment,
+  deleteAssignment,
+  getNotes,
+  addNote,
+  deleteNote,
+  seedDefaultCourses,
+} from "@/firebase/firestoreService";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Course {
+  id: string;
+  name: string;
+  progress: number;
+  color: string;
+}
+
+interface Assignment {
+  id: string;
+  title: string;
+  subject: string;
+  dueDate: string;
+  done: boolean;
+}
+
+interface Note {
+  id: string;
+  title: string;
+  subject: string;
+  color: string;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function formatDue(dateStr: string) {
+  if (!dateStr) return "";
+  const due = new Date(dateStr);
+  const now = new Date();
+  const diffMs = due.getTime() - now.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil(diffMs / 86400000);
+  if (diffDays < 0) return "Overdue";
+  if (diffDays === 0) return "Due Today";
+  if (diffDays === 1) return "Due Tomorrow";
+  return `Due in ${diffDays} days`;
+}
+
+function dueUrgency(dateStr: string) {
+  if (!dateStr) return "text-zinc-500";
+  const due = new Date(dateStr);
+  const now = new Date();
+  const diffDays = Math.ceil((due.getTime() - now.setHours(0, 0, 0, 0)) / 86400000);
+  if (diffDays < 0) return "text-red-500";
+  if (diffDays <= 1) return "text-red-400";
+  if (diffDays <= 3) return "text-amber-400";
+  return "text-emerald-400";
+}
+
+// ─── Modals ───────────────────────────────────────────────────────────────────
+function AddAssignmentModal({
+  courses,
+  onClose,
+  onAdd,
+}: {
+  courses: Course[];
+  onClose: () => void;
+  onAdd: (data: { title: string; subject: string; dueDate: string }) => Promise<void>;
+}) {
+  const [title, setTitle] = useState("");
+  const [subject, setSubject] = useState(courses[0]?.name || "");
+  const [dueDate, setDueDate] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !dueDate) return;
+    setLoading(true);
+    await onAdd({ title: title.trim(), subject, dueDate });
+    setLoading(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-lg bg-[#13131a] border border-[#27272a] rounded-t-3xl p-6 space-y-5 animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-bold text-white">Add Assignment</h3>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <label className="text-xs text-zinc-500 uppercase tracking-wider mb-1 block">Title</label>
+            <input
+              autoFocus
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Solve HC Verma Ch 29"
+              className="w-full px-4 py-3 rounded-xl bg-[#1c1c27] border border-[#27272a] text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500 uppercase tracking-wider mb-1 block">Subject</label>
+            <select
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-[#1c1c27] border border-[#27272a] text-white focus:outline-none focus:border-indigo-500 transition text-sm"
+            >
+              {courses.map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500 uppercase tracking-wider mb-1 block">Due Date</label>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-[#1c1c27] border border-[#27272a] text-white focus:outline-none focus:border-indigo-500 transition text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading || !title.trim() || !dueDate}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-sm transition-all"
+          >
+            {loading ? "Adding..." : "Add Assignment"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AddNoteModal({
+  courses,
+  onClose,
+  onAdd,
+}: {
+  courses: Course[];
+  onClose: () => void;
+  onAdd: (data: { title: string; subject: string }) => Promise<void>;
+}) {
+  const [title, setTitle] = useState("");
+  const [subject, setSubject] = useState(courses[0]?.name || "");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setLoading(true);
+    await onAdd({ title: title.trim(), subject });
+    setLoading(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-lg bg-[#13131a] border border-[#27272a] rounded-t-3xl p-6 space-y-5 animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-bold text-white">Add Note</h3>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <label className="text-xs text-zinc-500 uppercase tracking-wider mb-1 block">Title</label>
+            <input
+              autoFocus
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Integration Formulas"
+              className="w-full px-4 py-3 rounded-xl bg-[#1c1c27] border border-[#27272a] text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500 uppercase tracking-wider mb-1 block">Subject</label>
+            <select
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-[#1c1c27] border border-[#27272a] text-white focus:outline-none focus:border-indigo-500 transition text-sm"
+            >
+              {courses.map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="submit"
+            disabled={loading || !title.trim()}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-sm transition-all"
+          >
+            {loading ? "Adding..." : "Add Note"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { user, userData, loading } = useAuth();
+  const { user, userData, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!loading && !user) router.replace("/login");
-  }, [user, loading, router]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
 
-  if (loading || !userData) {
+  const [showAddAssignment, setShowAddAssignment] = useState(false);
+  const [showAddNote, setShowAddNote] = useState(false);
+
+  // ── Guard & Load
+  useEffect(() => {
+    if (!authLoading && !user) router.replace("/login");
+  }, [user, authLoading, router]);
+
+  const loadAll = useCallback(async () => {
+    if (!user) return;
+    setDataLoading(true);
+    try {
+      // Seed default courses if user signed up before we added the subject step
+      const existingCourses = await getCourses(user.uid);
+      if (existingCourses.length === 0 && userData?.subjects?.length) {
+        await seedDefaultCourses(user.uid, userData.subjects);
+        const seeded = await getCourses(user.uid);
+        setCourses(seeded);
+      } else {
+        setCourses(existingCourses);
+      }
+      const [assigns, nts] = await Promise.all([
+        getAssignments(user.uid),
+        getNotes(user.uid),
+      ]);
+      setAssignments(assigns as Assignment[]);
+      setNotes(nts as Note[]);
+    } catch (err) {
+      console.error("Error loading dashboard data:", err);
+    } finally {
+      setDataLoading(false);
+    }
+  }, [user, userData]);
+
+  useEffect(() => {
+    if (user && userData) loadAll();
+  }, [user, userData, loadAll]);
+
+  // ── Handlers
+  const handleAddAssignment = async (data: { title: string; subject: string; dueDate: string }) => {
+    if (!user) return;
+    await addAssignment(user.uid, data);
+    const updated = await getAssignments(user.uid);
+    setAssignments(updated as Assignment[]);
+  };
+
+  const handleToggleAssignment = async (id: string, done: boolean) => {
+    if (!user) return;
+    setAssignments((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, done: !done } : a))
+    );
+    await toggleAssignment(user.uid, id, done);
+  };
+
+  const handleDeleteAssignment = async (id: string) => {
+    if (!user) return;
+    setAssignments((prev) => prev.filter((a) => a.id !== id));
+    await deleteAssignment(user.uid, id);
+  };
+
+  const handleAddNote = async (data: { title: string; subject: string }) => {
+    if (!user) return;
+    await addNote(user.uid, data, notes.length);
+    const updated = await getNotes(user.uid);
+    setNotes(updated as Note[]);
+  };
+
+  const handleDeleteNote = async (id: string) => {
+    if (!user) return;
+    setNotes((prev) => prev.filter((n) => n.id !== id));
+    await deleteNote(user.uid, id);
+  };
+
+  // ── Computed Stats
+  const pending = assignments.filter((a) => !a.done).length;
+  const done = assignments.filter((a) => a.done).length;
+
+  const initials = (userData?.nickname || userData?.username || "?")
+    .slice(0, 2)
+    .toUpperCase();
+
+  if (authLoading || !userData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
         <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -20,12 +302,24 @@ export default function Dashboard() {
     );
   }
 
-  const initials = (userData.nickname || userData.username || "?")
-    .slice(0, 2)
-    .toUpperCase();
-
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
+      {/* Modals */}
+      {showAddAssignment && (
+        <AddAssignmentModal
+          courses={courses}
+          onClose={() => setShowAddAssignment(false)}
+          onAdd={handleAddAssignment}
+        />
+      )}
+      {showAddNote && (
+        <AddNoteModal
+          courses={courses}
+          onClose={() => setShowAddNote(false)}
+          onAdd={handleAddNote}
+        />
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-20 bg-[#0a0a0f]/80 backdrop-blur border-b border-[#27272a] px-5 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -48,97 +342,193 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-white mt-0.5">
             {userData.nickname || userData.username} 👋
           </h1>
+          {userData.examTarget && (
+            <p className="text-xs text-indigo-400 mt-1 font-medium">🎯 Target: {userData.examTarget}</p>
+          )}
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: "Courses", value: "4", color: "indigo" },
-            { label: "Pending", value: "2", color: "amber" },
-            { label: "Done", value: "11", color: "emerald" },
-          ].map((stat) => (
-            <div key={stat.label} className="bg-[#13131a] border border-[#27272a] rounded-2xl p-4 text-center">
-              <p className={`text-2xl font-bold text-${stat.color}-400`}>{stat.value}</p>
-              <p className="text-xs text-zinc-500 mt-1">{stat.label}</p>
-            </div>
-          ))}
-        </div>
+        {dataLoading ? (
+          <div className="grid grid-cols-3 gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-[#13131a] border border-[#27272a] rounded-2xl p-4 text-center animate-pulse">
+                <div className="h-7 bg-[#1c1c27] rounded w-8 mx-auto mb-2" />
+                <div className="h-3 bg-[#1c1c27] rounded w-12 mx-auto" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Courses", value: courses.length, color: "indigo" },
+              { label: "Pending", value: pending, color: "amber" },
+              { label: "Done", value: done, color: "emerald" },
+            ].map((stat) => (
+              <div key={stat.label} className="bg-[#13131a] border border-[#27272a] rounded-2xl p-4 text-center">
+                <p className={`text-2xl font-bold text-${stat.color}-400`}>{stat.value}</p>
+                <p className="text-xs text-zinc-500 mt-1">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Courses */}
         <section className="bg-[#13131a] border border-[#27272a] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-white">Courses</h2>
-            <span className="text-xs text-zinc-500">4 enrolled</span>
+            <span className="text-xs text-zinc-500">{courses.length} enrolled</span>
           </div>
-          <div className="space-y-3">
-            {[
-              { name: "Advanced Mathematics", progress: 68, color: "bg-indigo-500" },
-              { name: "Physics 101", progress: 45, color: "bg-violet-500" },
-              { name: "Chemistry Basics", progress: 82, color: "bg-emerald-500" },
-              { name: "English Literature", progress: 30, color: "bg-amber-500" },
-            ].map((course) => (
-              <div key={course.name} className="flex items-center gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-zinc-300">{course.name}</span>
-                    <span className="text-xs text-zinc-600">{course.progress}%</span>
-                  </div>
-                  <div className="h-1.5 bg-[#27272a] rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${course.color} rounded-full transition-all duration-700`}
-                      style={{ width: `${course.progress}%` }}
-                    />
+          {dataLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-8 bg-[#1c1c27] rounded-xl animate-pulse" />
+              ))}
+            </div>
+          ) : courses.length === 0 ? (
+            <p className="text-sm text-zinc-600 text-center py-4">No courses yet. Complete setup to add subjects.</p>
+          ) : (
+            <div className="space-y-3">
+              {courses.map((course) => (
+                <div key={course.id} className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-zinc-300">{course.name}</span>
+                      <span className="text-xs text-zinc-600">{course.progress}%</span>
+                    </div>
+                    <div className="h-1.5 bg-[#27272a] rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${course.color} rounded-full transition-all duration-700`}
+                        style={{ width: `${course.progress}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Assignments */}
         <section className="bg-[#13131a] border border-[#27272a] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-white">Assignments</h2>
-            <span className="text-xs text-zinc-500">2 pending</span>
+            <button
+              id="add-assignment-btn"
+              onClick={() => setShowAddAssignment(true)}
+              className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add
+            </button>
           </div>
-          <ul className="space-y-3">
-            {[
-              { name: "Chapter 4 Quiz", subject: "Mathematics", due: "Due Tomorrow", urgency: "text-red-400" },
-              { name: "Lab Report #3", subject: "Physics", due: "Due in 3 days", urgency: "text-amber-400" },
-            ].map((a) => (
-              <li key={a.name} className="flex items-center justify-between p-3 bg-[#1c1c27] rounded-xl">
-                <div>
-                  <p className="text-sm font-medium text-white">{a.name}</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">{a.subject}</p>
-                </div>
-                <span className={`text-xs font-medium ${a.urgency}`}>{a.due}</span>
-              </li>
-            ))}
-          </ul>
+
+          {dataLoading ? (
+            <div className="space-y-3">
+              {[1, 2].map((i) => <div key={i} className="h-14 bg-[#1c1c27] rounded-xl animate-pulse" />)}
+            </div>
+          ) : assignments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <p className="text-sm text-zinc-600">No assignments yet.</p>
+              <button onClick={() => setShowAddAssignment(true)} className="text-xs text-indigo-400 mt-1 hover:underline">
+                Add your first one →
+              </button>
+            </div>
+          ) : (
+            <ul className="space-y-3">
+              {assignments.map((a) => (
+                <li key={a.id} className={`flex items-center gap-3 p-3 rounded-xl transition ${a.done ? "bg-[#1a1a24] opacity-60" : "bg-[#1c1c27]"}`}>
+                  <button
+                    onClick={() => handleToggleAssignment(a.id, a.done)}
+                    className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${
+                      a.done ? "bg-emerald-500 border-emerald-500" : "border-zinc-600 hover:border-indigo-500"
+                    }`}
+                  >
+                    {a.done && (
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium truncate ${a.done ? "line-through text-zinc-500" : "text-white"}`}>
+                      {a.title}
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-0.5">{a.subject}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-xs font-medium ${dueUrgency(a.dueDate)}`}>
+                      {formatDue(a.dueDate)}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteAssignment(a.id)}
+                      className="text-zinc-700 hover:text-red-400 transition"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         {/* Notes */}
         <section className="bg-[#13131a] border border-[#27272a] rounded-2xl p-5">
-          <h2 className="font-semibold text-white mb-4">Recent Notes</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { title: "Integration Formulas", tag: "Math", bg: "bg-indigo-600/10 border-indigo-500/20" },
-              { title: "Newton's Laws", tag: "Physics", bg: "bg-violet-600/10 border-violet-500/20" },
-              { title: "Periodic Table", tag: "Chemistry", bg: "bg-emerald-600/10 border-emerald-500/20" },
-              { title: "Literary Devices", tag: "English", bg: "bg-amber-600/10 border-amber-500/20" },
-            ].map((note) => (
-              <div key={note.title} className={`${note.bg} border rounded-xl p-3 cursor-pointer hover:brightness-110 transition`}>
-                <p className="text-sm font-medium text-white/90 leading-snug">{note.title}</p>
-                <p className="text-xs text-white/40 mt-1">{note.tag}</p>
-              </div>
-            ))}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-white">Notes</h2>
+            <button
+              id="add-note-btn"
+              onClick={() => setShowAddNote(true)}
+              className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add
+            </button>
           </div>
+          {dataLoading ? (
+            <div className="grid grid-cols-2 gap-3">
+              {[1, 2, 3, 4].map((i) => <div key={i} className="h-16 bg-[#1c1c27] rounded-xl animate-pulse" />)}
+            </div>
+          ) : notes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <p className="text-sm text-zinc-600">No notes yet.</p>
+              <button onClick={() => setShowAddNote(true)} className="text-xs text-indigo-400 mt-1 hover:underline">
+                Add your first note →
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {notes.map((note) => (
+                <div
+                  key={note.id}
+                  className={`${note.color} border rounded-xl p-3 relative group cursor-pointer hover:brightness-110 transition`}
+                >
+                  <p className="text-sm font-medium text-white/90 leading-snug pr-5">{note.title}</p>
+                  <p className="text-xs text-white/40 mt-1">{note.subject}</p>
+                  <button
+                    onClick={() => handleDeleteNote(note.id)}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
-        {/* Discussion placeholder */}
+        {/* Discussion */}
         <section className="bg-[#13131a] border border-[#27272a] rounded-2xl p-5">
           <h2 className="font-semibold text-white mb-3">Discussion</h2>
-          <div className="flex flex-col items-center justify-center py-8 text-center">
+          <div className="flex flex-col items-center justify-center py-6 text-center">
             <div className="w-12 h-12 rounded-full bg-[#1c1c27] flex items-center justify-center mb-3">
               <svg className="w-6 h-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -166,7 +556,7 @@ export default function Dashboard() {
           </Link>
         ))}
       </nav>
-      <div className="h-20" /> {/* bottom nav spacer */}
+      <div className="h-20" />
     </div>
   );
 }
