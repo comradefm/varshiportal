@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   query,
   orderBy,
+  arrayUnion,
 } from "firebase/firestore";
 
 // ─── User ────────────────────────────────────────────────────────────────────
@@ -30,7 +31,7 @@ export const createUserData = async (userId, data) => {
   try {
     await setDoc(doc(db, "users", userId), {
       user_id: userId,
-      room_id: null,
+      rooms: [],
       created_at: serverTimestamp(),
       ...data,
     });
@@ -40,11 +41,11 @@ export const createUserData = async (userId, data) => {
   }
 };
 
-export const updateUserRoom = async (userId, roomId) => {
+export const joinUserToRoom = async (userId, roomId) => {
   try {
-    await updateDoc(doc(db, "users", userId), { room_id: roomId });
+    await updateDoc(doc(db, "users", userId), { rooms: arrayUnion(roomId) });
   } catch (error) {
-    console.error("Error updating user room:", error);
+    console.error("Error joining user to room:", error);
     throw error;
   }
 };

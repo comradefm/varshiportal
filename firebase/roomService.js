@@ -10,7 +10,7 @@ import {
   getDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { updateUserRoom } from "./firestoreService";
+import { joinUserToRoom } from "./firestoreService";
 
 const generateRoomCode = () => {
   const num = Math.floor(1000 + Math.random() * 9000);
@@ -28,7 +28,7 @@ export const createRoom = async (userId) => {
     });
     // Store room_id back into the document
     await updateDoc(roomRef, { room_id: roomRef.id });
-    await updateUserRoom(userId, roomRef.id);
+    await joinUserToRoom(userId, roomRef.id);
     return { room_id: roomRef.id, room_code: roomCode };
   } catch (error) {
     console.error("Error creating room:", error);
@@ -58,7 +58,7 @@ export const joinRoom = async (roomCode, userId) => {
     }
 
     await updateDoc(doc(db, "rooms", roomDoc.id), { user_2: userId });
-    await updateUserRoom(userId, roomDoc.id);
+    await joinUserToRoom(userId, roomDoc.id);
 
     return { room_id: roomDoc.id, room_code: roomCode };
   } catch (error) {
@@ -77,6 +77,27 @@ export const getRoomData = async (roomId) => {
   } catch (error) {
     console.error("Error getting room data:", error);
     throw error;
+  }
+};
+
+export const getUserRooms = async (userId) => {
+  try {
+    const { getUserData } = await import("./firestoreService");
+    const userData = await getUserData(userId);
+    if (!userData || !userData.rooms || userData.rooms.length === 0) return [];
+
+    const roomPromises = userData.rooms.map(id => getRoomData(id));
+    const rooms = await Promise.all(roomPromises);
+    
+    // Sort by created_at descending if possible
+    return rooms.filter(r => r !== null).sort((a, b) => {
+      const timeA = a.created_at?.toMillis() || 0;
+      const timeB = b.created_at?.toMillis() || 0;
+      return timeB - timeA;
+    });
+  } catch (error) {
+    console.error("Error fetching user rooms:", error);
+    return [];
   }
 };
 

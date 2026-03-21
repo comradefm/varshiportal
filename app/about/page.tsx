@@ -34,7 +34,7 @@ export default function About() {
 
   const handleUnlock = () => {
     setShowPin(false);
-    router.push("/pairing");
+    router.push("/chat");
   };
 
   if (loading || !userData) {
