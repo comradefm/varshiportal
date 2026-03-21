@@ -230,3 +230,133 @@ export const deleteNote = async (userId, noteId) => {
     throw error;
   }
 };
+
+// ─── Curriculum Seeding ──────────────────────────────────────────────────────
+
+const CURRICULUM_DATA = {
+  "JEE Mains": {
+    Physics: {
+      notes: ["Kinematics Formulas", "Laws of Motion FBDs", "Thermodynamics Core Concepts"],
+      assignments: [
+        { title: "Solve HC Verma Ch 2-5", dueDays: 2 },
+        { title: "PYQs on Rotational Mechanics", dueDays: 4 }
+      ]
+    },
+    Chemistry: {
+      notes: ["Organic Name Reactions", "Inorganic Exception Trends", "Physical Chemistry Formula Sheet"],
+      assignments: [
+        { title: "NCERT Exemplar: Chemical Bonding", dueDays: 3 },
+        { title: "Coordination Compounds Mock Test", dueDays: 5 }
+      ]
+    },
+    Mathematics: {
+      notes: ["Calculus Short Tricks", "Coordinate Geometry Key Points", "Algebra Cheat Sheet"],
+      assignments: [
+        { title: "Solve RD Sharma: Integration", dueDays: 2 },
+        { title: "PYQs: Vector & 3D Geometry", dueDays: 6 }
+      ]
+    }
+  },
+  "JEE Advanced": {
+    Physics: {
+      notes: ["Advanced Mechanics Concepts", "Electrodynamics In-Depth", "Optics Derivations"],
+      assignments: [
+        { title: "Irodov Selected Problems", dueDays: 3 },
+        { title: "JEE Advanced PYQs: Path Finder", dueDays: 7 }
+      ]
+    },
+    Chemistry: {
+      notes: ["Advanced Reaction Mechanisms", "Block Chemistry Details", "Thermodynamics & Equilibrium"],
+      assignments: [
+        { title: "MS Chouhan Organic Set 1", dueDays: 4 },
+        { title: "N Avasthi Physical Chem Problems", dueDays: 5 }
+      ]
+    },
+    Mathematics: {
+      notes: ["Complex Numbers Properties", "Integral Calculus Tricks", "Conic Sections Master Sheet"],
+      assignments: [
+        { title: "Black Book: Calculus", dueDays: 5 },
+        { title: "Advanced Mock Test", dueDays: 7 }
+      ]
+    }
+  },
+  "NEET": {
+    Physics: {
+      notes: ["NEET Formula Sheet", "Important Graphs & Charts", "Modern Physics Summary"],
+      assignments: [
+        { title: "Solve PYQs: Mechanics", dueDays: 2 },
+        { title: "Mock Test: Optics", dueDays: 4 }
+      ]
+    },
+    Chemistry: {
+      notes: ["Organic Mechanisms", "Inorganic NCERT Highlights", "Physical Chemistry Formulas"],
+      assignments: [
+        { title: "NCERT Exemplar: Physical", dueDays: 3 },
+        { title: "PYQs: Organic", dueDays: 5 }
+      ]
+    },
+    Biology: {
+      notes: ["Human Physiology Flowcharts", "Genetics Core Concepts", "Plant Kingdom Examples"],
+      assignments: [
+        { title: "NCERT Reading: Ecology", dueDays: 2 },
+        { title: "Solve 100+ MCQs: Cell Biology", dueDays: 4 }
+      ]
+    }
+  },
+  "Boards": {
+    Physics: {
+      notes: ["Class 12 Derivations", "Important Definitions", "Ray Optics Ray Diagrams"],
+      assignments: [
+        { title: "Previous Year Board Paper 2023", dueDays: 4 }
+      ]
+    },
+    Chemistry: {
+      notes: ["Organic Conversions Map", "P-Block Elements Summary", "Electrochemistry Formulas"],
+      assignments: [
+        { title: "Sample Paper: Chemistry", dueDays: 5 }
+      ]
+    },
+    Mathematics: {
+      notes: ["Calculus NCERT Summary", "Vectors & 3D Important Forms"],
+      assignments: [
+        { title: "NCERT Miscellaneous Exercises", dueDays: 3 }
+      ]
+    },
+    English: {
+      notes: ["Writing Section Formats", "Literature Chapter Summaries", "Vistas Important Characters"],
+      assignments: [
+        { title: "Write Article on given topic", dueDays: 2 },
+        { title: "Pre-board Mock Test", dueDays: 6 }
+      ]
+    }
+  }
+};
+
+export const seedCurriculum = async (userId, examTarget, subjects) => {
+  try {
+    const curriculum = CURRICULUM_DATA[examTarget];
+    if (!curriculum) return;
+
+    let noteCount = 0;
+
+    for (const subject of subjects) {
+      const data = curriculum[subject];
+      if (data) {
+        for (const noteTitle of data.notes) {
+          await addNote(userId, { title: noteTitle, subject }, noteCount);
+          noteCount++;
+        }
+        
+        for (const assign of data.assignments) {
+          const due = new Date();
+          due.setDate(due.getDate() + assign.dueDays);
+          const dueDate = due.toISOString().split('T')[0];
+          await addAssignment(userId, { title: assign.title, subject, dueDate });
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error seeding curriculum:", error);
+    throw error;
+  }
+};

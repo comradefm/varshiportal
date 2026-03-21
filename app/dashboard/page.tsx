@@ -13,6 +13,7 @@ import {
   addNote,
   deleteNote,
   seedDefaultCourses,
+  seedCurriculum,
 } from "@/firebase/firestoreService";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -226,18 +227,26 @@ export default function Dashboard() {
     setDataLoading(true);
     try {
       // Seed default courses if user signed up before we added the subject step
-      const existingCourses = await getCourses(user.uid);
-      if (existingCourses.length === 0 && userData?.subjects?.length) {
+      let currentCourses = await getCourses(user.uid);
+      if (currentCourses.length === 0 && userData?.subjects?.length) {
         await seedDefaultCourses(user.uid, userData.subjects);
-        const seeded = await getCourses(user.uid);
-        setCourses(seeded as Course[]);
-      } else {
-        setCourses(existingCourses as Course[]);
+        currentCourses = await getCourses(user.uid);
       }
-      const [assigns, nts] = await Promise.all([
+      setCourses(currentCourses as Course[]);
+
+      let [assigns, nts] = await Promise.all([
         getAssignments(user.uid),
         getNotes(user.uid),
       ]);
+
+      if (assigns.length === 0 && nts.length === 0 && userData?.examTarget && currentCourses.length > 0) {
+        const subjects = (currentCourses as Course[]).map((c) => c.name);
+        await seedCurriculum(user.uid, userData.examTarget, subjects);
+        
+        assigns = await getAssignments(user.uid);
+        nts = await getNotes(user.uid);
+      }
+
       setAssignments(assigns as Assignment[]);
       setNotes(nts as Note[]);
     } catch (err) {
