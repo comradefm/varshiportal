@@ -230,9 +230,9 @@ export default function Dashboard() {
       if (existingCourses.length === 0 && userData?.subjects?.length) {
         await seedDefaultCourses(user.uid, userData.subjects);
         const seeded = await getCourses(user.uid);
-        setCourses(seeded);
+        setCourses(seeded as Course[]);
       } else {
-        setCourses(existingCourses);
+        setCourses(existingCourses as Course[]);
       }
       const [assigns, nts] = await Promise.all([
         getAssignments(user.uid),
@@ -360,12 +360,12 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: "Courses", value: courses.length, color: "indigo" },
-              { label: "Pending", value: pending, color: "amber" },
-              { label: "Done", value: done, color: "emerald" },
+              { label: "Courses", value: courses.length, color: "text-indigo-400" },
+              { label: "Pending", value: pending, color: "text-amber-400" },
+              { label: "Done", value: done, color: "text-emerald-400" },
             ].map((stat) => (
               <div key={stat.label} className="bg-[#13131a] border border-[#27272a] rounded-2xl p-4 text-center">
-                <p className={`text-2xl font-bold text-${stat.color}-400`}>{stat.value}</p>
+                <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
                 <p className="text-xs text-zinc-500 mt-1">{stat.label}</p>
               </div>
             ))}
