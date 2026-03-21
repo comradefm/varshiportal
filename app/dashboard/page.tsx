@@ -228,8 +228,9 @@ export default function Dashboard() {
     try {
       // Seed default courses if user signed up before we added the subject step
       let currentCourses = await getCourses(user.uid);
-      if (currentCourses.length === 0 && userData?.subjects?.length) {
-        await seedDefaultCourses(user.uid, userData.subjects);
+      if (currentCourses.length === 0) {
+        const subjectsList = userData?.subjects?.length ? userData.subjects : ["Physics", "Chemistry", "Mathematics"];
+        await seedDefaultCourses(user.uid, subjectsList);
         currentCourses = await getCourses(user.uid);
       }
       setCourses(currentCourses as Course[]);
@@ -239,9 +240,10 @@ export default function Dashboard() {
         getNotes(user.uid),
       ]);
 
-      if (assigns.length === 0 && nts.length === 0 && userData?.examTarget && currentCourses.length > 0) {
+      if (assigns.length === 0 && nts.length === 0 && currentCourses.length > 0) {
+        const target = userData?.examTarget || "JEE Mains";
         const subjects = (currentCourses as Course[]).map((c) => c.name);
-        await seedCurriculum(user.uid, userData.examTarget, subjects);
+        await seedCurriculum(user.uid, target, subjects);
         
         assigns = await getAssignments(user.uid);
         nts = await getNotes(user.uid);
