@@ -9,7 +9,7 @@ import { hashPin } from "@/lib/pinUtils";
 const EXAM_SUBJECTS: Record<string, string[]> = {
   "JEE Mains": ["Physics", "Chemistry", "Mathematics"],
   "JEE Advanced": ["Physics", "Chemistry", "Mathematics"],
-  "NEET": ["Physics", "Chemistry", "Biology"],
+  "NEET": ["Physics", "Physical Chemistry", "Organic Chemistry", "Inorganic Chemistry", "Biology"],
   "Boards": ["Physics", "Chemistry", "Mathematics", "English"],
 };
 

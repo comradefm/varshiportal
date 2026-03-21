@@ -288,11 +288,25 @@ const CURRICULUM_DATA = {
         { title: "Mock Test: Optics", dueDays: 4 }
       ]
     },
-    Chemistry: {
-      notes: ["Organic Mechanisms", "Inorganic NCERT Highlights", "Physical Chemistry Formulas"],
+    "Physical Chemistry": {
+      notes: ["Thermodynamics Formulas", "Electrochemistry: Nernst Equation", "Chemical Kinetics Rate Equations"],
       assignments: [
-        { title: "NCERT Exemplar: Physical", dueDays: 3 },
-        { title: "PYQs: Organic", dueDays: 5 }
+        { title: "Solve 50 Numericals: Equilibrium & pH", dueDays: 2 },
+        { title: "PYQs: Electrochemistry", dueDays: 4 }
+      ]
+    },
+    "Organic Chemistry": {
+      notes: ["GOC: Inductive & Resonance", "Named Reactions Cheat Sheet", "Biomolecules & Polymers Revision"],
+      assignments: [
+        { title: "Solve 50+ MCQs on Hydrocarbons", dueDays: 3 },
+        { title: "Reaction Mechanisms Practice Sheet", dueDays: 5 }
+      ]
+    },
+    "Inorganic Chemistry": {
+      notes: ["Chemical Bonding: VSEPR & MOT", "Coordination Compounds Isomerism", "p-Block Exceptions & Trends"],
+      assignments: [
+        { title: "NCERT Reading: Coordination Compounds", dueDays: 2 },
+        { title: "PYQs: Chemical Bonding", dueDays: 6 }
       ]
     },
     Biology: {
