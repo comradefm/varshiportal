@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -9,26 +9,22 @@ export default function About() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
   const [showPin, setShowPin] = useState(false);
-  const [clickCount, setClickCount] = useState(0);
-  const [clickTimer, setClickTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const lastClickTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [user, loading, router]);
 
   const handleHiddenTrigger = () => {
-    const newCount = clickCount + 1;
-    setClickCount(newCount);
-
-    // Reset click count after 3 seconds of inactivity
-    if (clickTimer) clearTimeout(clickTimer);
-    const timer = setTimeout(() => setClickCount(0), 3000);
-    setClickTimer(timer);
-
-    if (newCount >= 2) {
-      setClickCount(0);
-      if (clickTimer) clearTimeout(clickTimer);
+    const currentTime = new Date().getTime();
+    const timeDiff = currentTime - lastClickTimeRef.current;
+    
+    // If the gap between clicks is less than 500ms, it's a double tap
+    if (timeDiff > 0 && timeDiff < 500) {
       setShowPin(true);
+      lastClickTimeRef.current = 0; // Reset to avoid triple-tap triggering again immediately
+    } else {
+      lastClickTimeRef.current = currentTime;
     }
   };
 
