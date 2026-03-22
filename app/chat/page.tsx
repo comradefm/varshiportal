@@ -37,7 +37,9 @@ export default function Chat() {
     
     const currentTime = new Date().getTime();
     const timeDiff = currentTime - lastClickTimeRef.current;
-    if (timeDiff > 0 && timeDiff < 500) {
+    
+    // Using 800ms for mobile reliability
+    if (timeDiff > 0 && timeDiff < 800) {
       router.push("/dashboard");
       lastClickTimeRef.current = 0;
     } else {

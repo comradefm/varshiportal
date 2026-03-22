@@ -19,10 +19,11 @@ export default function About() {
     const currentTime = new Date().getTime();
     const timeDiff = currentTime - lastClickTimeRef.current;
     
-    // If the gap between clicks is less than 500ms, it's a double tap
-    if (timeDiff > 0 && timeDiff < 500) {
+    // If the gap between clicks is less than 800ms, it's a double tap
+    // 800ms is more forgiving for mobile clicks which can have a slight delay
+    if (timeDiff > 0 && timeDiff < 800) {
       setShowPin(true);
-      lastClickTimeRef.current = 0; // Reset to avoid triple-tap triggering again immediately
+      lastClickTimeRef.current = 0; 
     } else {
       lastClickTimeRef.current = currentTime;
     }
@@ -105,7 +106,8 @@ export default function About() {
           <p
             id="hidden-trigger"
             onClick={handleHiddenTrigger}
-            className="text-xs text-zinc-700 select-none cursor-default"
+            className="text-xs text-zinc-700 select-none cursor-default py-2"
+            style={{ touchAction: 'manipulation' }}
           >
             © 2026 StudyPortal Inc. All rights reserved.
           </p>
