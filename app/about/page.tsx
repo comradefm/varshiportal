@@ -25,7 +25,7 @@ export default function About() {
     const timer = setTimeout(() => setClickCount(0), 3000);
     setClickTimer(timer);
 
-    if (newCount >= 5) {
+    if (newCount >= 2) {
       setClickCount(0);
       if (clickTimer) clearTimeout(clickTimer);
       setShowPin(true);

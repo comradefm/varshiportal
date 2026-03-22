@@ -71,19 +71,19 @@ export default function Home() {
               {loading ? (
                 <div className="w-24 h-9 bg-slate-200 animate-pulse rounded-full" />
               ) : user ? (
-                <button 
-                  onClick={() => router.push(userData?.username ? "/dashboard" : "/setup")}
+                <Link 
+                  href={userData?.username ? "/dashboard" : "/setup"}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full text-sm font-semibold transition shadow-md shadow-indigo-200"
                 >
                   Go to Dashboard
-                </button>
+                </Link>
               ) : (
-                <button 
-                  onClick={() => router.push("/login")}
+                <Link 
+                  href="/login"
                   className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full text-sm font-semibold transition shadow-md shadow-indigo-200"
                 >
                   Login / Register
-                </button>
+                </Link>
               )}
             </div>
 
@@ -108,12 +108,12 @@ export default function Home() {
               </Link>
             ))}
             <div className="pt-2 border-t border-slate-100">
-              <button 
-                onClick={() => router.push(user ? (userData?.username ? "/dashboard" : "/setup") : "/login")}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition"
+              <Link 
+                href={user ? (userData?.username ? "/dashboard" : "/setup") : "/login"}
+                className="block text-center w-full bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition"
               >
                 {user ? "Dashboard" : "Login / Register"}
-              </button>
+              </Link>
             </div>
           </div>
         )}
@@ -140,12 +140,12 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center gap-4">
-            <button 
-              onClick={() => router.push("/login")}
+            <Link 
+              href="/login"
               className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full font-bold text-base transition flex items-center gap-2 shadow-lg shadow-indigo-600/30"
             >
               Start Learning Now <ChevronRight className="w-5 h-5" />
-            </button>
+            </Link>
             <button className="px-8 py-3.5 bg-white/5 hover:bg-white/10 text-white border border-white/20 rounded-full font-semibold text-base transition flex items-center gap-2 backdrop-blur-sm">
               <PlayCircle className="w-5 h-5 text-indigo-400" /> Watch Demo
             </button>
