@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/firebase/firebaseConfig";
-import { getUserData } from "@/firebase/firestoreService";
+import { getUserData, updateUserPresence } from "@/firebase/firestoreService";
 
 interface UserData {
   uid?: string;
@@ -54,6 +54,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     return () => unsubscribe();
   }, [refreshUserData]);
+
+  // Presence Tracking
+  useEffect(() => {
+    if (!user) return;
+    updateUserPresence(user.uid, true);
+
+    const handleVisibility = () => {
+      updateUserPresence(user.uid, document.visibilityState === "visible");
+    };
+    const handleUnload = () => {
+      updateUserPresence(user.uid, false);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("beforeunload", handleUnload);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("beforeunload", handleUnload);
+      updateUserPresence(user.uid, false);
+    };
+  }, [user]);
 
   return (
     <AuthContext.Provider value={{ user, userData, loading, refreshUserData }}>

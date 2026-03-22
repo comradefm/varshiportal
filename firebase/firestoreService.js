@@ -59,6 +59,17 @@ export const updateUserNickname = async (userId, nickname) => {
   }
 };
 
+export const updateUserPresence = async (userId, isOnline) => {
+  try {
+    await updateDoc(doc(db, "users", userId), { 
+      isOnline, 
+      lastActive: serverTimestamp() 
+    });
+  } catch (error) {
+    console.error("Error updating presence:", error);
+  }
+};
+
 // ─── Courses ─────────────────────────────────────────────────────────────────
 
 const COLORS = [

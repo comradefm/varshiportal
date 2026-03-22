@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { sendMessage, subscribeToMessages } from "@/firebase/chatService";
 import { getRoomData, getPartnerData, getUserRooms, createRoom, joinRoom } from "@/firebase/roomService";
+import { db } from "@/firebase/firebaseConfig";
+import { doc, onSnapshot } from "firebase/firestore";
 import ChatBox from "@/components/ChatBox";
 import MessageBubble from "@/components/MessageBubble";
 import Link from "next/link";
@@ -25,6 +27,32 @@ export default function Chat() {
   const [joinCode, setJoinCode] = useState("");
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState("");
+
+  const [partnerOnline, setPartnerOnline] = useState(false);
+
+  // Subscribe to active partner's presence in real-time
+  useEffect(() => {
+    if (!activeRoomId) {
+      setPartnerOnline(false);
+      return;
+    }
+    const room = rooms.find(r => r.room_id === activeRoomId);
+    if (!room?.partner?.uid) {
+      setPartnerOnline(false);
+      return;
+    }
+
+    const unsub = onSnapshot(doc(db, "users", room.partner.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setPartnerOnline(!!data.isOnline);
+      } else {
+        setPartnerOnline(false);
+      }
+    });
+
+    return () => unsub();
+  }, [activeRoomId, rooms]);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -192,9 +220,12 @@ export default function Chat() {
                     }`}
                   >
                     <div className="flex items-center justify-between w-full">
-                      <span className={`text-sm font-semibold truncate ${isSelected ? 'text-indigo-400' : 'text-zinc-200'}`}>
-                        {pName}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-semibold truncate ${isSelected ? 'text-indigo-400' : 'text-zinc-200'}`}>
+                          {pName}
+                        </span>
+                        {room.partner?.isOnline && !isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50 flex-shrink-0" title="Online" />}
+                      </div>
                       {isWaiting && (
                          <span className="text-[10px] uppercase font-bold text-amber-500/80 bg-amber-500/10 px-1.5 py-0.5 rounded flex-shrink-0">
                            Pending
@@ -239,7 +270,7 @@ export default function Chat() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="font-bold text-white text-base truncate">{partnerNickname}</h2>
-                    {activeRoomData?.partner && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-dot flex-shrink-0" />}
+                    {activeRoomData?.partner && partnerOnline && <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot flex-shrink-0 shadow-[0_0_8px_rgba(52,211,153,0.8)]" title="Online now" />}
                   </div>
                   <p className="text-xs text-zinc-500 font-mono tracking-wide mt-0.5">{activeRoomData?.room_code}</p>
                 </div>
