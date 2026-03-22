@@ -20,8 +20,7 @@ export default function About() {
     const timeDiff = currentTime - lastClickTimeRef.current;
     
     // If the gap between clicks is less than 800ms, it's a double tap
-    // 800ms is more forgiving for mobile clicks which can have a slight delay
-    if (timeDiff > 0 && timeDiff < 800) {
+    if (timeDiff >= 0 && timeDiff < 800) {
       setShowPin(true);
       lastClickTimeRef.current = 0; 
     } else {

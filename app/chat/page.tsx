@@ -41,7 +41,7 @@ export default function Chat() {
     const timeDiff = currentTime - lastClickTimeRef.current;
     
     // Using 800ms for mobile reliability
-    if (timeDiff > 0 && timeDiff < 800) {
+    if (timeDiff >= 0 && timeDiff < 800) {
       router.push("/dashboard");
       lastClickTimeRef.current = 0;
     } else {
@@ -177,7 +177,7 @@ export default function Chat() {
     );
   }
 
-  const myNickname = userData.nickname || userData.username || "Me";
+  const myNickname = userData?.nickname || userData?.username || "Me";
   const activeRoomData = rooms.find(r => r.room_id === activeRoomId);
   const partnerNickname = activeRoomData?.partner?.nickname || activeRoomData?.partner?.username || "Partner";
 
