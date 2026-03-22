@@ -30,6 +30,21 @@ export default function Chat() {
 
   const [partnerOnline, setPartnerOnline] = useState(false);
 
+  const lastClickTimeRef = useRef<number>(0);
+
+  const handleDoubleTapExit = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('a') || (e.target as HTMLElement).closest('input')) return;
+    
+    const currentTime = new Date().getTime();
+    const timeDiff = currentTime - lastClickTimeRef.current;
+    if (timeDiff > 0 && timeDiff < 500) {
+      router.push("/dashboard");
+      lastClickTimeRef.current = 0;
+    } else {
+      lastClickTimeRef.current = currentTime;
+    }
+  };
+
   // Subscribe to active partner's presence in real-time
   useEffect(() => {
     if (!activeRoomId) {
@@ -167,7 +182,7 @@ export default function Chat() {
       
       {/* SIDEBAR (Left Pane) */}
       <aside className={`w-full md:w-80 lg:w-96 flex-shrink-0 flex flex-col border-r border-[#1a1a2e] bg-[#0d0d17] ${activeRoomId ? 'hidden md:flex' : 'flex'}`}>
-        <header className="px-5 py-5 border-b border-[#1a1a2e] flex items-center justify-between sticky top-0 z-10 bg-[#0d0d17]/95 backdrop-blur">
+        <header className="px-5 py-5 border-b border-[#1a1a2e] flex items-center justify-between sticky top-0 z-10 bg-[#0d0d17]/95 backdrop-blur" onClick={handleDoubleTapExit}>
           <div className="flex items-center gap-3">
             <Link href="/dashboard" className="w-8 h-8 rounded-lg bg-[#1c1c2e] hover:bg-[#27273a] flex items-center justify-center transition">
               <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -257,7 +272,7 @@ export default function Chat() {
           </div>
         ) : (
           <>
-            <header className="flex-shrink-0 bg-[#080810]/95 backdrop-blur border-b border-[#1a1a2e] px-4 md:px-6 py-4 flex items-center justify-between sticky top-0 z-10 w-full">
+            <header className="flex-shrink-0 bg-[#080810]/95 backdrop-blur border-b border-[#1a1a2e] px-4 md:px-6 py-4 flex items-center justify-between sticky top-0 z-10 w-full" onClick={handleDoubleTapExit}>
               <div className="flex items-center gap-3">
                 <button 
                   onClick={() => setActiveRoomId(null)}
