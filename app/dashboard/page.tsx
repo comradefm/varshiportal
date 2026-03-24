@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -17,7 +17,6 @@ import {
 } from "@/firebase/firestoreService";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-// ... (omitted for brevity, assume they are the same)
 interface Course {
   id: string;
   name: string;
@@ -214,7 +213,6 @@ export default function Dashboard() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
-  const [partnerStatus, setPartnerStatus] = useState<{ name: string; isOnline: boolean; lastActive: any } | null>(null);
 
   const [showAddAssignment, setShowAddAssignment] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
@@ -269,45 +267,13 @@ export default function Dashboard() {
     };
   }, [user, userData?.subjects]);
 
-  // ── Partner Status Subscription
-  useEffect(() => {
-    if (!user || courses.length === 0) return;
-
-    const getFirstPartner = async () => {
-      const { getUserRooms, getPartnerData } = await import("@/firebase/roomService");
-      const { subscribeToUserData } = await import("@/firebase/firestoreService");
-      
-      const userRooms = await getUserRooms(user.uid);
-      if (userRooms.length > 0) {
-        const partner = await getPartnerData(userRooms[0].room_id, user.uid);
-        if (partner) {
-          return subscribeToUserData(partner.user_id || partner.uid, (data: any) => {
-            if (data) {
-              setPartnerStatus({
-                name: data.nickname || data.username || "Partner",
-                isOnline: !!data.isOnline,
-                lastActive: data.lastActive
-              });
-            }
-          });
-        }
-      }
-      return null;
-    };
-
-    let unsub: (() => void) | null = null;
-    getFirstPartner().then(u => { if (u) unsub = u; });
-
-    return () => { if (unsub) unsub(); };
-  }, [user, courses.length]);
-
   // ── Auto Seed Curriculum
   useEffect(() => {
     const seedIfNeeded = async () => {
        if (!dataLoading && user && courses.length > 0 && assignments.length === 0 && notes.length === 0) {
-         const target = userData?.examTarget || "JEE Mains";
-         const subjects = courses.map((c) => c.name);
-         await seedCurriculum(user.uid, target, subjects);
+          const target = userData?.examTarget || "JEE Mains";
+          const subjects = courses.map((c) => c.name);
+          await seedCurriculum(user.uid, target, subjects);
        }
     };
     seedIfNeeded();
@@ -317,12 +283,10 @@ export default function Dashboard() {
   const handleAddAssignment = async (data: { title: string; subject: string; dueDate: string }) => {
     if (!user) return;
     await addAssignment(user.uid, data);
-    // Real-time listener will update list
   };
 
   const handleToggleAssignment = async (id: string, done: boolean) => {
     if (!user) return;
-    // Optimistic UI for toggle
     setAssignments((prev) =>
       prev.map((a) => (a.id === id ? { ...a, done: !done } : a))
     );
@@ -331,7 +295,6 @@ export default function Dashboard() {
 
   const handleDeleteAssignment = async (id: string) => {
     if (!user) return;
-    // Optimistic UI for delete
     setAssignments((prev) => prev.filter((a) => a.id !== id));
     await deleteAssignment(user.uid, id);
   };
@@ -354,20 +317,6 @@ export default function Dashboard() {
   const initials = (userData?.nickname || userData?.username || "?")
     .slice(0, 2)
     .toUpperCase();
-
-  // ── Helpers
-  const formatLastSeen = (timestamp: any) => {
-    if (!timestamp) return "Never";
-    // Check if it's a Firestore Timestamp
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    
-    if (diff < 60000) return "Just now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
 
   if (authLoading || !userData) {
     return (
@@ -400,7 +349,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center">
             <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
           </div>
           <span className="font-semibold tracking-tight">StudyPortal</span>
@@ -412,24 +361,11 @@ export default function Dashboard() {
 
       <main className="px-5 py-6 max-w-2xl mx-auto space-y-5 animate-fade-in">
         {/* Greeting */}
-        <div className="mb-2 relative">
+        <div className="mb-2">
           <p className="text-zinc-500 text-sm">Good day,</p>
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-white mt-0.5">
-              {userData.nickname || userData.username} 👋
-            </h1>
-            {partnerStatus && (
-              <div className="flex flex-col items-end">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{partnerStatus.name}</span>
-                  <div className={`w-2 h-2 rounded-full ${partnerStatus.isOnline ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse" : "bg-zinc-700"}`} />
-                </div>
-                <span className="text-[9px] text-zinc-600 mt-0.5">
-                  {partnerStatus.isOnline ? "Online Now" : `Last seen: ${formatLastSeen(partnerStatus.lastActive)}`}
-                </span>
-              </div>
-            )}
-          </div>
+          <h1 className="text-2xl font-bold text-white mt-0.5">
+            {userData.nickname || userData.username} 👋
+          </h1>
           {userData.examTarget && (
             <p className="text-xs text-indigo-400 mt-1 font-medium">🎯 Target: {userData.examTarget}</p>
           )}
@@ -473,7 +409,7 @@ export default function Dashboard() {
               ))}
             </div>
           ) : courses.length === 0 ? (
-            <p className="text-sm text-zinc-600 text-center py-4">No courses yet. Complete setup to add subjects.</p>
+            <p className="text-sm text-zinc-600 text-center py-4">No courses yet.</p>
           ) : (
             <div className="space-y-3">
               {courses.map((course) => (
@@ -611,20 +547,6 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-        </section>
-
-        {/* Discussion */}
-        <section className="bg-[#13131a] border border-[#27272a] rounded-2xl p-5">
-          <h2 className="font-semibold text-white mb-3">Discussion</h2>
-          <div className="flex flex-col items-center justify-center py-6 text-center">
-            <div className="w-12 h-12 rounded-full bg-[#1c1c27] flex items-center justify-center mb-3">
-              <svg className="w-6 h-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-            </div>
-            <p className="text-sm text-zinc-600">No recent discussions.</p>
-            <p className="text-xs text-zinc-700 mt-1">Start a new topic to collaborate!</p>
-          </div>
         </section>
       </main>
 
