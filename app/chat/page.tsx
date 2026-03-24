@@ -6,6 +6,7 @@ import { sendMessage, subscribeToMessages } from "@/firebase/chatService";
 import { getRoomData, getPartnerData, getUserRooms, createRoom, joinRoom } from "@/firebase/roomService";
 import { db } from "@/firebase/firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
+import { useCall } from "@/context/CallContext";
 import ChatBox from "@/components/ChatBox";
 import MessageBubble from "@/components/MessageBubble";
 import Link from "next/link";
@@ -35,6 +36,27 @@ export default function Chat() {
 
   const lastClickTimeRef = useRef<number>(0);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const { startCall, isCallActive, isCalling, acceptCall } = useCall();
+  const [hasIncomingOffer, setHasIncomingOffer] = useState(false);
+
+  // Listen for incoming call in the active room
+  useEffect(() => {
+    if (!activeRoomId || isCallActive || isCalling) {
+      setHasIncomingOffer(false);
+      return;
+    }
+    const callDoc = doc(db, "rooms", activeRoomId, "call", "current_call");
+    const unsub = onSnapshot(callDoc, (snapshot) => {
+      const data = snapshot.data();
+      if (data?.offer && !data.answer) {
+        setHasIncomingOffer(true);
+      } else {
+        setHasIncomingOffer(false);
+      }
+    });
+    return () => unsub();
+  }, [activeRoomId, isCallActive, isCalling]);
 
   const handleDoubleTapExit = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -322,6 +344,19 @@ export default function Chat() {
                     </span>
                   </div>
                 </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => activeRoomId && startCall(activeRoomId)}
+                  disabled={isCalling || isCallActive}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition shadow-lg ${isCallActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-600/30'}`}
+                  title="Start Study Session"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
               </div>
             </header>
 

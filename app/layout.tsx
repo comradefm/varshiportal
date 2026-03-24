@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { CallProvider } from "@/context/CallContext";
+import VideoOverlay from "@/components/VideoOverlay";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "StudyPortal",
-  description: "A comprehensive study management application for students.",
+  description: "A collaborative study platform",
 };
 
 export default function RootLayout({
@@ -17,8 +19,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.className} antialiased`}>
-        <AuthProvider>{children}</AuthProvider>
+      <body className={inter.className}>
+        <AuthProvider>
+          <CallProvider>
+            {children}
+            <VideoOverlay />
+          </CallProvider>
+        </AuthProvider>
       </body>
     </html>
   );
