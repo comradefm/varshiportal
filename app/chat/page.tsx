@@ -37,8 +37,21 @@ export default function Chat() {
   const lastClickTimeRef = useRef<number>(0);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { startCall, isCallActive, isCalling, acceptCall } = useCall();
+  const { startCall, isCallActive, isCalling, acceptCall, isInitialized } = useCall();
   const [hasIncomingOffer, setHasIncomingOffer] = useState(false);
+
+  // Auto-start or auto-join session if initialized
+  useEffect(() => {
+    if (isInitialized && activeRoomId && !isCallActive && !isCalling) {
+      // If there's an incoming offer, we could auto-join, but let's just start to be safe
+      // Actually, if an offer exists, we should auto-accept.
+      if (hasIncomingOffer) {
+        acceptCall();
+      } else {
+        startCall(activeRoomId);
+      }
+    }
+  }, [isInitialized, activeRoomId, hasIncomingOffer, isCallActive, isCalling, startCall, acceptCall]);
 
   // Listen for incoming call in the active room
   useEffect(() => {

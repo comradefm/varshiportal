@@ -9,6 +9,8 @@ interface CallContextType {
   remoteStream: MediaStream | null;
   isCallActive: boolean;
   isCalling: boolean;
+  isInitialized: boolean;
+  initializeMedia: () => Promise<void>;
   startCall: (roomId: string) => Promise<void>;
   endCall: () => Promise<void>;
   incomingCall: { roomId: string; fromName: string } | null;
@@ -28,10 +30,28 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isCallActive, setIsCallActive] = useState(false);
   const [isCalling, setIsCalling] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [incomingCall, setIncomingCall] = useState<{ roomId: string; fromName: string } | null>(null);
   
   const callSessionRef = useRef<CallSession | null>(null);
   const currentRoomIdRef = useRef<string | null>(null);
+
+  const initializeMedia = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      setLocalStream(stream);
+      setIsInitialized(true);
+      // Store initialization in sessionStorage for the duration of tab
+      sessionStorage.setItem('study_portal_initialized', 'true');
+    } catch (err) {
+      console.error("Media init failed:", err);
+    }
+  };
+
+  useEffect(() => {
+     const saved = sessionStorage.getItem('study_portal_initialized');
+     if (saved === 'true') setIsInitialized(true);
+  }, []);
 
   const startCall = async (roomId: string) => {
     try {
@@ -102,6 +122,8 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       remoteStream, 
       isCallActive, 
       isCalling,
+      isInitialized,
+      initializeMedia,
       startCall, 
       endCall, 
       incomingCall, 
