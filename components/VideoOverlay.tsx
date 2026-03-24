@@ -1,3 +1,4 @@
+"use client";
 import React, { useEffect, useRef } from 'react';
 import { useCall } from '@/context/CallContext';
 import { usePathname } from 'next/navigation';
