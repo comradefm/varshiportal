@@ -21,6 +21,8 @@ export default function Chat() {
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [typingStatuses, setTypingStatuses] = useState<Record<string, boolean>>({});
+  const [replyTo, setReplyTo] = useState<any | null>(null);
   
   // Modals state
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -31,6 +33,7 @@ export default function Chat() {
   const [partnerOnline, setPartnerOnline] = useState(false);
 
   const lastClickTimeRef = useRef<number>(0);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleDoubleTapExit = (e: React.MouseEvent) => {
     // Don't exit if tapping on interactive elements
@@ -87,6 +90,7 @@ export default function Chat() {
       const userRooms = await getUserRooms(user.uid);
       const enriched = await Promise.all(
         userRooms.map(async (r) => {
+          const { getPartnerData } = await import("@/firebase/roomService");
           const partner = await getPartnerData(r.room_id, user.uid);
           return { ...r, partner };
         })
@@ -104,13 +108,51 @@ export default function Chat() {
     }
   }, [userData?.rooms, loadRooms]);
 
-  // Subscribe to messages when active room changes
+  // Subscribe to messages and typing status when active room changes
   useEffect(() => {
     if (!activeRoomId) return;
     setMessages([]); // clear old messages instantly
-    const unsubscribe = subscribeToMessages(activeRoomId, setMessages);
-    return () => unsubscribe();
-  }, [activeRoomId]);
+    setTypingStatuses({});
+    
+    const { subscribeToTypingStatus, markMessagesAsSeen } = require("@/firebase/chatService");
+    
+    const unsubMessages = subscribeToMessages(activeRoomId, (msgs: any[]) => {
+      setMessages(msgs);
+      // When new messages arrive, mark them as seen if we are in the room
+      if (user) markMessagesAsSeen(activeRoomId, user.uid);
+    });
+    
+    const unsubTyping = subscribeToTypingStatus(activeRoomId, setTypingStatuses);
+    
+    // Initial mark as seen
+    if (user) markMessagesAsSeen(activeRoomId, user.uid);
+
+    return () => {
+      unsubMessages();
+      unsubTyping();
+    };
+  }, [activeRoomId, user]);
+
+  // Handle typing status updates
+  useEffect(() => {
+    if (!activeRoomId || !user) return;
+    const { setTypingStatus } = require("@/firebase/chatService");
+
+    if (text.length > 0) {
+      setTypingStatus(activeRoomId, user.uid, true);
+      
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        setTypingStatus(activeRoomId, user.uid, false);
+      }, 3000);
+    } else {
+      setTypingStatus(activeRoomId, user.uid, false);
+    }
+
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [text, activeRoomId, user]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -121,12 +163,17 @@ export default function Chat() {
     if (!text.trim() || !user || !activeRoomId || sending) return;
     setSending(true);
     const msg = text.trim();
+    const replyContext = replyTo;
     setText("");
+    setReplyTo(null);
     try {
-      await sendMessage(activeRoomId, user.uid, msg);
+      const { sendMessage, setTypingStatus } = require("@/firebase/chatService");
+      await sendMessage(activeRoomId, user.uid, msg, replyContext);
+      await setTypingStatus(activeRoomId, user.uid, false);
     } catch (err) {
       console.error("Send failed:", err);
       setText(msg); // restore text on failure
+      setReplyTo(replyContext);
     } finally {
       setSending(false);
       inputRef.current?.focus();
@@ -316,43 +363,90 @@ export default function Chat() {
                 {messages.map((msg) => {
                   const isOwn = msg.sender_id === user?.uid;
                   return (
-                    <MessageBubble
-                      key={msg.message_id}
-                      text={msg.message_text}
-                      senderName={isOwn ? myNickname : partnerNickname}
-                      isOwnMessage={isOwn}
-                    />
+                    <div key={msg.message_id} className="group relative">
+                      <MessageBubble
+                        text={msg.message_text}
+                        senderName={isOwn ? myNickname : partnerNickname}
+                        isOwnMessage={isOwn}
+                        replyTo={msg.reply_to}
+                        status={isOwn ? msg.status : undefined}
+                      />
+                      <button 
+                        onClick={() => setReplyTo({ id: msg.message_id, text: msg.message_text, senderName: isOwn ? myNickname : partnerNickname })}
+                        className={`absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full bg-[#1c1c2e] hover:bg-[#27273a] text-zinc-400 ${isOwn ? 'right-[80%]' : 'left-[80%]'}`}
+                        title="Reply"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                      </button>
+                    </div>
                   );
                 })}
+
+                {/* Typing Indicator */}
+                {Object.entries(typingStatuses).some(([uid, isTyping]) => uid !== user?.uid && isTyping) && (
+                  <div className="flex items-center gap-2 px-2 py-1 animate-pulse">
+                    <div className="flex gap-1">
+                      <div className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                      <div className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                      <div className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce" />
+                    </div>
+                    <span className="text-[10px] text-zinc-500 font-medium italic">
+                      {partnerNickname} is typing...
+                    </span>
+                  </div>
+                )}
+                
                 <div ref={bottomRef} className="h-4" />
               </div>
             </ChatBox>
 
             {/* Input Footer */}
             <footer className="flex-shrink-0 bg-[#0d0d17]/80 backdrop-blur border-t border-[#1a1a2e] px-4 md:px-6 py-4 w-full">
-              <div className="flex items-center gap-3 w-full max-w-4xl mx-auto">
-                <input
-                  ref={inputRef}
-                  id="chat-input"
-                  type="text"
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={!activeRoomData?.partner ? "Waiting for partner..." : "Type a message…"}
-                  disabled={!activeRoomData?.partner}
-                  className="flex-1 min-w-0 bg-[#151523] border border-[#27273a] text-white placeholder-zinc-600 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:border-indigo-500 focus:bg-[#1a1a2e] transition disabled:opacity-50"
-                  autoComplete="off"
-                />
-                <button
-                  id="send-btn"
-                  onClick={handleSend}
-                  disabled={!text.trim() || sending || !activeRoomData?.partner}
-                  className="w-12 h-12 flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 rounded-full flex items-center justify-center transition shadow-lg shadow-indigo-500/20"
-                >
-                  <svg className="w-5 h-5 text-white ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
-                </button>
+              <div className="max-w-4xl mx-auto w-full flex flex-col gap-2">
+                {/* Reply Preview */}
+                {replyTo && (
+                  <div className="flex items-center justify-between bg-[#151523] border border-[#27273a] rounded-xl px-4 py-2 animate-in slide-in-from-bottom-2">
+                    <div className="flex flex-col min-w-0 border-l-2 border-indigo-500 pl-3">
+                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Replying to {replyTo.senderName}</span>
+                      <p className="text-xs text-zinc-400 truncate">{replyTo.text}</p>
+                    </div>
+                    <button 
+                      onClick={() => setReplyTo(null)}
+                      className="text-zinc-500 hover:text-zinc-300 transition p-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3 w-full">
+                  <input
+                    ref={inputRef}
+                    id="chat-input"
+                    type="text"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={!activeRoomData?.partner ? "Waiting for partner..." : "Type a message…"}
+                    disabled={!activeRoomData?.partner}
+                    className="flex-1 min-w-0 bg-[#151523] border border-[#27273a] text-white placeholder-zinc-600 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:border-indigo-500 focus:bg-[#1a1a2e] transition disabled:opacity-50"
+                    autoComplete="off"
+                  />
+                  <button
+                    id="send-btn"
+                    onClick={handleSend}
+                    disabled={!text.trim() || sending || !activeRoomData?.partner}
+                    className="w-12 h-12 flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 rounded-full flex items-center justify-center transition shadow-lg shadow-indigo-500/20"
+                  >
+                    <svg className="w-5 h-5 text-white ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </footer>
           </>
