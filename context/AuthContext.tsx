@@ -40,12 +40,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let unsubUser: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      
       if (unsubUser) {
         unsubUser();
         unsubUser = null;
       }
+
+      setUser(firebaseUser);
 
       if (firebaseUser) {
         unsubUser = subscribeToUserData(firebaseUser.uid, (data: any) => {

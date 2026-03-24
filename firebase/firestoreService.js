@@ -13,6 +13,7 @@ import {
   orderBy,
   onSnapshot,
   arrayRemove,
+  arrayUnion,
 } from "firebase/firestore";
 
 // ─── User ────────────────────────────────────────────────────────────────────
@@ -78,10 +79,11 @@ export const updateUserExamTarget = async (userId, examTarget) => {
 
 export const updateUserPresence = async (userId, isOnline) => {
   try {
-    await updateDoc(doc(db, "users", userId), { 
+    // Use setDoc with merge: true to avoid "No document to update" error if user doc is missing
+    await setDoc(doc(db, "users", userId), { 
       isOnline, 
       lastActive: serverTimestamp() 
-    });
+    }, { merge: true });
   } catch (error) {
     console.error("Error updating presence:", error);
   }
