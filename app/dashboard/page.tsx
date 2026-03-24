@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import {
-  getCourses,
-  getAssignments,
-  addAssignment,
+  subscribeToCourses,
+  subscribeToAssignments,
   toggleAssignment,
   deleteAssignment,
-  getNotes,
+  subscribeToNotes,
+  addAssignment,
   addNote,
   deleteNote,
   seedDefaultCourses,
@@ -17,6 +17,7 @@ import {
 } from "@/firebase/firestoreService";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+// ... (omitted for brevity, assume they are the same)
 interface Course {
   id: string;
   name: string;
@@ -217,61 +218,78 @@ export default function Dashboard() {
   const [showAddAssignment, setShowAddAssignment] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
 
-  // ── Guard & Load
+  // ── Guard
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
 
-  const loadAll = useCallback(async () => {
+  // ── Real-time Subscriptions
+  useEffect(() => {
     if (!user) return;
-    setDataLoading(true);
-    try {
-      // Seed default courses if user signed up before we added the subject step
-      let currentCourses = await getCourses(user.uid);
-      if (currentCourses.length === 0) {
+
+    let initialCoursesDone = false;
+    let initialAssignsDone = false;
+    let initialNotesDone = false;
+
+    const checkLoading = () => {
+      if (initialCoursesDone && initialAssignsDone && initialNotesDone) {
+        setDataLoading(false);
+      }
+    };
+
+    const unsubCourses = subscribeToCourses(user.uid, async (data: any) => {
+      setCourses(data as Course[]);
+      
+      // Seed if empty
+      if (!initialCoursesDone && data.length === 0) {
         const subjectsList = userData?.subjects?.length ? userData.subjects : ["Physics", "Chemistry", "Mathematics"];
         await seedDefaultCourses(user.uid, subjectsList);
-        currentCourses = await getCourses(user.uid);
       }
-      setCourses(currentCourses as Course[]);
+      initialCoursesDone = true;
+      checkLoading();
+    });
 
-      let [assigns, nts] = await Promise.all([
-        getAssignments(user.uid),
-        getNotes(user.uid),
-      ]);
+    const unsubAssigns = subscribeToAssignments(user.uid, (data: any) => {
+      setAssignments(data as Assignment[]);
+      initialAssignsDone = true;
+      checkLoading();
+    });
 
-      if (assigns.length === 0 && nts.length === 0 && currentCourses.length > 0) {
-        const target = userData?.examTarget || "JEE Mains";
-        const subjects = (currentCourses as Course[]).map((c) => c.name);
-        await seedCurriculum(user.uid, target, subjects);
-        
-        assigns = await getAssignments(user.uid);
-        nts = await getNotes(user.uid);
-      }
+    const unsubNotes = subscribeToNotes(user.uid, (data: any) => {
+      setNotes(data as Note[]);
+      initialNotesDone = true;
+      checkLoading();
+    });
 
-      setAssignments(assigns as Assignment[]);
-      setNotes(nts as Note[]);
-    } catch (err) {
-      console.error("Error loading dashboard data:", err);
-    } finally {
-      setDataLoading(false);
-    }
-  }, [user, userData]);
+    return () => {
+      unsubCourses();
+      unsubAssigns();
+      unsubNotes();
+    };
+  }, [user, userData?.subjects]);
 
+  // ── Auto Seed Curriculum
   useEffect(() => {
-    if (user && userData) loadAll();
-  }, [user, userData, loadAll]);
+    const seedIfNeeded = async () => {
+       if (!dataLoading && user && courses.length > 0 && assignments.length === 0 && notes.length === 0) {
+         const target = userData?.examTarget || "JEE Mains";
+         const subjects = courses.map((c) => c.name);
+         await seedCurriculum(user.uid, target, subjects);
+       }
+    };
+    seedIfNeeded();
+  }, [dataLoading, user, courses, assignments.length, notes.length, userData?.examTarget]);
 
   // ── Handlers
   const handleAddAssignment = async (data: { title: string; subject: string; dueDate: string }) => {
     if (!user) return;
     await addAssignment(user.uid, data);
-    const updated = await getAssignments(user.uid);
-    setAssignments(updated as Assignment[]);
+    // Real-time listener will update list
   };
 
   const handleToggleAssignment = async (id: string, done: boolean) => {
     if (!user) return;
+    // Optimistic UI for toggle
     setAssignments((prev) =>
       prev.map((a) => (a.id === id ? { ...a, done: !done } : a))
     );
@@ -280,6 +298,7 @@ export default function Dashboard() {
 
   const handleDeleteAssignment = async (id: string) => {
     if (!user) return;
+    // Optimistic UI for delete
     setAssignments((prev) => prev.filter((a) => a.id !== id));
     await deleteAssignment(user.uid, id);
   };
@@ -287,8 +306,6 @@ export default function Dashboard() {
   const handleAddNote = async (data: { title: string; subject: string }) => {
     if (!user) return;
     await addNote(user.uid, data, notes.length);
-    const updated = await getNotes(user.uid);
-    setNotes(updated as Note[]);
   };
 
   const handleDeleteNote = async (id: string) => {

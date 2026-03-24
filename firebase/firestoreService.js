@@ -11,10 +11,18 @@ import {
   serverTimestamp,
   query,
   orderBy,
-  arrayUnion,
+  onSnapshot,
+  arrayRemove,
 } from "firebase/firestore";
 
 // ─── User ────────────────────────────────────────────────────────────────────
+
+export const subscribeToUserData = (userId, callback) => {
+  return onSnapshot(doc(db, "users", userId), (doc) => {
+    if (doc.exists()) callback(doc.data());
+    else callback(null);
+  });
+};
 
 export const getUserData = async (userId) => {
   try {
@@ -59,6 +67,15 @@ export const updateUserNickname = async (userId, nickname) => {
   }
 };
 
+export const updateUserExamTarget = async (userId, examTarget) => {
+  try {
+    await updateDoc(doc(db, "users", userId), { examTarget });
+  } catch (error) {
+    console.error("Error updating exam target:", error);
+    throw error;
+  }
+};
+
 export const updateUserPresence = async (userId, isOnline) => {
   try {
     await updateDoc(doc(db, "users", userId), { 
@@ -80,6 +97,17 @@ const COLORS = [
   "bg-rose-500",
   "bg-cyan-500",
 ];
+
+/** Real-time subscription for courses */
+export const subscribeToCourses = (userId, callback) => {
+  const q = query(
+    collection(db, "users", userId, "courses"),
+    orderBy("createdAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+};
 
 /** Returns courses subcollection for a user sorted by createdAt */
 export const getCourses = async (userId) => {
@@ -142,6 +170,17 @@ export const seedDefaultCourses = async (userId, subjects) => {
 
 // ─── Assignments ─────────────────────────────────────────────────────────────
 
+/** Real-time subscription for assignments */
+export const subscribeToAssignments = (userId, callback) => {
+  const q = query(
+    collection(db, "users", userId, "assignments"),
+    orderBy("createdAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+};
+
 export const getAssignments = async (userId) => {
   try {
     const q = query(
@@ -203,6 +242,17 @@ const NOTE_COLORS = [
   "bg-rose-600/10 border-rose-500/20",
   "bg-cyan-600/10 border-cyan-500/20",
 ];
+
+/** Real-time subscription for notes */
+export const subscribeToNotes = (userId, callback) => {
+  const q = query(
+    collection(db, "users", userId, "notes"),
+    orderBy("createdAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+};
 
 export const getNotes = async (userId) => {
   try {
@@ -383,6 +433,28 @@ export const seedCurriculum = async (userId, examTarget, subjects) => {
     }
   } catch (error) {
     console.error("Error seeding curriculum:", error);
+    throw error;
+  }
+};
+// ─── Rooms ───────────────────────────────────────────────────────────────────
+
+export const leaveRoom = async (userId, roomId) => {
+  try {
+    // 1. Remove from user's rooms array
+    await updateDoc(doc(db, "users", userId), {
+      rooms: arrayRemove(roomId)
+    });
+
+    // 2. Check if room is empty (optional but good)
+    const roomRef = doc(db, "rooms", roomId);
+    const roomSnap = await getDoc(roomRef);
+    if (roomSnap.exists()) {
+      const data = roomSnap.data();
+      // If the another user is also gone or was never there, we could delete it.
+      // For now, just unlinking is fine to keep history if needed.
+    }
+  } catch (error) {
+    console.error("Error leaving room:", error);
     throw error;
   }
 };

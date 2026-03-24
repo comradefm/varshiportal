@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/firebase/firebaseConfig";
-import { getUserData, updateUserPresence } from "@/firebase/firestoreService";
+import { subscribeToUserData, updateUserPresence } from "@/firebase/firestoreService";
 
 interface UserData {
   uid?: string;
@@ -12,6 +12,8 @@ interface UserData {
   nickname?: string;
   room_id?: string;
   pin_hash?: string;
+  examTarget?: string;
+  subjects?: string[];
   [key: string]: any;
 }
 
@@ -29,31 +31,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Still keep refreshUserData for manual calls if needed, but it's less critical now
   const refreshUserData = useCallback(async (uid: string) => {
-    if (!uid) {
-      setUserData(null);
-      return;
-    }
-    try {
-      const data = await getUserData(uid);
-      setUserData(data);
-    } catch (e) {
-      console.error("Failed to refresh user data:", e);
-    }
+    // This is now mostly handled by the subscription, but we can leave it for fallback
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubUser: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
+      
+      if (unsubUser) {
+        unsubUser();
+        unsubUser = null;
+      }
+
       if (firebaseUser) {
-        await refreshUserData(firebaseUser.uid);
+        unsubUser = subscribeToUserData(firebaseUser.uid, (data: any) => {
+          setUserData(data);
+          setLoading(false);
+        });
       } else {
         setUserData(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
-    return () => unsubscribe();
-  }, [refreshUserData]);
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubUser) unsubUser();
+    };
+  }, []);
 
   // Presence Tracking
   useEffect(() => {
