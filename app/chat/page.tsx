@@ -23,7 +23,7 @@ export default function Chat() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [typingStatuses, setTypingStatuses] = useState<Record<string, boolean>>({});
-  const [replyTo, setReplyTo] = useState<any | null>(null);
+  const [replyTo, setReplyTo] = useState<{ id: string; text: string; senderName: string } | null>(null);
   
   // Modals state
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -214,30 +214,34 @@ export default function Chat() {
   };
 
   const formatLastSeen = (timestamp: any) => {
-    if (!timestamp) return "Offline";
+    if (!timestamp) return ""; // Cleanest default
     
     let date: Date;
-    if (timestamp.toDate) {
-      date = timestamp.toDate();
-    } else if (timestamp instanceof Date) {
-      date = timestamp;
-    } else if (typeof timestamp === 'number') {
-      date = new Date(timestamp);
-    } else if (timestamp.seconds) {
-      // Handle simple timestamp objects if they aren't class instances
-      date = new Date(timestamp.seconds * 1000);
-    } else {
-      date = new Date(timestamp);
-    }
+    if (timestamp.toDate) date = timestamp.toDate();
+    else if (timestamp instanceof Date) date = timestamp;
+    else if (typeof timestamp === 'number') date = new Date(timestamp);
+    else if (timestamp.seconds) date = new Date(timestamp.seconds * 1000);
+    else date = new Date(timestamp);
 
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     
-    if (diff < 0) return "Just now"; // Handle minor clock skew
-    if (diff < 60000) return "Just now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    if (diff < 60000) return "Active just now";
+    if (diff < 3600000) return `Active ${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) {
+      if (now.getDate() === date.getDate()) {
+        return `Active ${Math.floor(diff / 3600000)}h ago`;
+      } else {
+        return "Active yesterday";
+      }
+    }
+    
+    // Within last week
+    if (diff < 604800000) {
+      return `Active ${date.toLocaleDateString([], { weekday: 'long' })}`;
+    }
+
+    return `Active ${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
   };
 
   if (loading || !userData) {
@@ -350,11 +354,16 @@ export default function Chat() {
                     </button>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <p className="text-[10px] text-zinc-500 font-mono tracking-wide">{activeRoomData?.room_code}</p>
-                    <span className="text-[10px] text-zinc-600">•</span>
-                    <span className="text-[10px] text-zinc-400 italic">
-                      {partnerOnline ? "Active now" : `Last seen: ${formatLastSeen(partnerLastActive)}`}
-                    </span>
+                    {partnerOnline ? (
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                        <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Active now</span>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-zinc-400 font-medium tracking-wide">
+                        {formatLastSeen(partnerLastActive) || "Offline"}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -384,13 +393,21 @@ export default function Chat() {
                 {messages.map((msg) => {
                   const isOwn = msg.sender_id === user?.uid;
                   return (
-                    <div key={msg.message_id} className="group relative">
+                    <div key={msg.message_id} id={`msg-${msg.message_id}`} className="group relative">
                       <MessageBubble
                         text={msg.message_text}
                         senderName={isOwn ? myNickname : partnerNickname}
                         isOwnMessage={isOwn}
                         replyTo={msg.reply_to}
                         status={isOwn ? msg.status : undefined}
+                        onReplyClick={(id) => {
+                          const el = document.getElementById(`msg-${id}`);
+                          if (el) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            el.classList.add('bg-indigo-500/10');
+                            setTimeout(() => el.classList.remove('bg-indigo-500/10'), 2000);
+                          }
+                        }}
                       />
                       <button 
                         onClick={() => setReplyTo({ id: msg.message_id, text: msg.message_text, senderName: isOwn ? myNickname : partnerNickname })}
@@ -416,14 +433,19 @@ export default function Chat() {
             <footer className="footer bg-[#0d0d17]/80 backdrop-blur border-t border-[#1a1a2e] px-4 md:px-6 py-4">
               <div className="max-w-4xl mx-auto w-full flex flex-col gap-2">
                 {replyTo && (
-                  <div className="flex items-center justify-between bg-[#151523] border border-[#27273a] rounded-xl px-4 py-2">
+                  <div className="flex items-center justify-between bg-[#151523] border border-[#27273a] rounded-xl px-4 py-2.5 mb-2 animate-in slide-in-from-bottom-2 duration-200">
                     <div className="flex flex-col min-w-0 border-l-2 border-indigo-500 pl-3">
-                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Replying to {replyTo.senderName}</span>
-                      <p className="text-xs text-zinc-400 truncate">{replyTo.text}</p>
+                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                        Replying to {replyTo.senderName}
+                      </span>
+                      <p className="text-xs text-zinc-400 truncate mt-0.5">{replyTo.text}</p>
                     </div>
-                    <button onClick={() => setReplyTo(null)} className="text-zinc-500 p-1">
+                    <button onClick={() => setReplyTo(null)} className="text-zinc-500 hover:text-white p-1 transition-colors ml-4">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
                   </div>

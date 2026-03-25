@@ -3,13 +3,15 @@ interface MessageBubbleProps {
   senderName: string;
   isOwnMessage: boolean;
   replyTo?: {
+    id: string;
     text: string;
     senderName: string;
   };
   status?: "sent" | "seen";
+  onReplyClick?: (id: string) => void;
 }
 
-export default function MessageBubble({ text, senderName, isOwnMessage, replyTo, status }: MessageBubbleProps) {
+export default function MessageBubble({ text, senderName, isOwnMessage, replyTo, status, onReplyClick }: MessageBubbleProps) {
   return (
     <div className={`flex flex-col w-full mb-3 ${isOwnMessage ? "items-end" : "items-start"}`}>
       <span className={`text-[11px] text-zinc-600 mb-1 font-medium ${isOwnMessage ? "mr-2" : "ml-2"}`}>
@@ -25,11 +27,14 @@ export default function MessageBubble({ text, senderName, isOwnMessage, replyTo,
           }`}
         >
           {replyTo && (
-            <div className={`mb-1.5 px-3 py-1.5 rounded-lg border-l-2 text-[11px] line-clamp-2 ${
-              isOwnMessage 
-                ? "bg-black/20 border-white/30 text-zinc-200" 
-                : "bg-white/5 border-indigo-500/50 text-zinc-400"
-            }`}>
+            <div 
+              onClick={() => onReplyClick && onReplyClick(replyTo.id)}
+              className={`mb-1.5 px-3 py-1.5 rounded-lg border-l-2 text-[11px] line-clamp-2 cursor-pointer transition-colors ${
+                isOwnMessage 
+                  ? "bg-black/20 border-white/30 text-zinc-200 hover:bg-black/30" 
+                  : "bg-white/5 border-indigo-500/50 text-zinc-400 hover:bg-white/10"
+              }`}
+            >
               <div className="font-bold opacity-80 mb-0.5">{replyTo.senderName}</div>
               <div className="opacity-90 italic">{replyTo.text}</div>
             </div>

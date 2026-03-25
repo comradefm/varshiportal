@@ -64,25 +64,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Presence Tracking
+  // Presence Tracking (Heartbeat & Visibility)
   useEffect(() => {
     if (!user) return;
-    updateUserPresence(user.uid, true);
+    
+    const update = (online: boolean) => {
+      console.log(`[Presence] Updating status to ${online ? 'online' : 'offline'}`);
+      updateUserPresence(user.uid, online);
+    };
 
-    const handleVisibility = () => {
-      updateUserPresence(user.uid, document.visibilityState === "visible");
-    };
-    const handleUnload = () => {
-      updateUserPresence(user.uid, false);
-    };
+    update(true);
+
+    // Heartbeat every 2 mins to keep lastActive fresh
+    const heartbeat = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        update(true);
+      }
+    }, 120000);
+
+    const handleVisibility = () => update(document.visibilityState === "visible");
+    const handleUnload = () => update(false);
 
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("beforeunload", handleUnload);
 
     return () => {
+      clearInterval(heartbeat);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("beforeunload", handleUnload);
-      updateUserPresence(user.uid, false);
+      update(false);
     };
   }, [user]);
 
