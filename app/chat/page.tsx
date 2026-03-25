@@ -327,11 +327,27 @@ export default function Chat() {
                   </svg>
                 </button>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
                     <h2 className="font-bold text-white text-base truncate">{partnerNickname}</h2>
                     {activeRoomData?.partner && partnerOnline && (
                       <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                     )}
+                    <button 
+                      onClick={async () => {
+                        if (!user || !activeRoomId) return;
+                        const { doc, updateDoc } = await import('firebase/firestore');
+                        const userRef = doc(db, "users", user.uid);
+                        await updateDoc(userRef, {
+                          primaryRoomId: userData?.primaryRoomId === activeRoomId ? null : activeRoomId
+                        });
+                      }}
+                      className={`p-1.5 rounded-lg transition-all ${userData?.primaryRoomId === activeRoomId ? 'bg-amber-500/20 text-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-zinc-500 hover:text-zinc-300'}`}
+                      title={userData?.primaryRoomId === activeRoomId ? "Unpin Partner" : "Pin Partner (Always-on)"}
+                    >
+                      <svg className="w-4 h-4" fill={userData?.primaryRoomId === activeRoomId ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                      </svg>
+                    </button>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-[10px] text-zinc-500 font-mono tracking-wide">{activeRoomData?.room_code}</p>

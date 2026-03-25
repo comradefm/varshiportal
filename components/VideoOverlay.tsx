@@ -8,8 +8,8 @@ import { motion } from 'framer-motion';
 const VideoOverlay = () => {
   const { localStream, remoteStream, isCallActive, isCalling, endCall, connectionState } = useCall();
   const { userData } = useAuth();
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const [playFailed, setPlayFailed] = React.useState(false);
+  
   const pathname = usePathname();
 
   const attachStream = (el: HTMLVideoElement | null, stream: MediaStream | null, name: string) => {
@@ -17,7 +17,10 @@ const VideoOverlay = () => {
       console.log(`[VideoOverlay] Attaching ${name} stream`);
       el.srcObject = stream;
       el.muted = true;
-      el.play().catch(e => console.error(`[VideoOverlay] ${name} play failed:`, e));
+      el.play().catch(e => {
+        console.error(`[VideoOverlay] ${name} play failed:`, e);
+        if (name === 'remote') setPlayFailed(true);
+      });
     }
   };
 
@@ -58,6 +61,25 @@ const VideoOverlay = () => {
           className="w-full h-full object-cover pointer-events-none select-none bg-black"
         />
 
+        {playFailed && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md z-20 transition-all">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setPlayFailed(false);
+                const vid = e.currentTarget.parentElement?.querySelector('video');
+                if (vid) vid.play().catch(console.error);
+              }}
+              className="w-16 h-16 rounded-full bg-indigo-600 flex items-center justify-center shadow-2xl shadow-indigo-600/40 hover:scale-110 active:scale-95 transition-all text-white pointer-events-auto"
+            >
+              <svg className="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </button>
+            <span className="mt-4 text-[10px] font-bold text-indigo-300 uppercase tracking-[0.2em] animate-pulse">Tap to Start Video</span>
+          </div>
+        )}
+
         {/* Local Video Preview (Self) */}
         {localStream && (
           <div className="absolute top-3 left-3 w-12 h-16 md:w-14 md:h-20 bg-zinc-900 border border-white/20 rounded-lg overflow-hidden z-10 shadow-lg ring-1 ring-black/50">
@@ -78,17 +100,6 @@ const VideoOverlay = () => {
             <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest animate-pulse font-mono">
               {getStatusText()}
             </span>
-            {connectionState === 'failed' && (
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  endCall();
-                }}
-                className="mt-4 px-3 py-1 bg-rose-500/20 text-rose-300 text-[9px] font-bold border border-rose-500/30 rounded-md pointer-events-auto"
-              >
-                RETRY
-              </button>
-            )}
           </div>
         )}
         
@@ -97,7 +108,7 @@ const VideoOverlay = () => {
         <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2 py-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-lg pointer-events-none">
            <div className={`w-1.5 h-1.5 rounded-full ${remoteStream ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.5)]`} />
            <span className="text-[9px] font-bold text-white uppercase tracking-tighter">
-             {remoteStream ? 'Partner Live' : 'Connecting...'}
+             {remoteStream ? (userData?.primaryRoomId ? 'Exclusive Partner' : 'Partner Live') : 'Connecting...'}
            </span>
         </div>
         
