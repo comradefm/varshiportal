@@ -11,9 +11,13 @@ const VideoOverlay = () => {
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
+      console.log("Attaching remote stream to video element");
       remoteVideoRef.current.srcObject = remoteStream;
+      
+      // Attempt to play just in case autoPlay fails
+      remoteVideoRef.current.play().catch(e => console.log("Auto-play blocked or failed:", e));
     }
-  }, [remoteStream]);
+  }, [remoteStream, isCallActive, isCalling]);
 
   // If no partner stream and not calling, don't show anything
   if (!remoteStream && !isCalling) return null;
@@ -23,7 +27,8 @@ const VideoOverlay = () => {
       drag
       dragConstraints={{ left: -window.innerWidth + 200, right: 0, top: 0, bottom: window.innerHeight - 300 }}
       whileDrag={{ scale: 1.05, cursor: 'grabbing' }}
-      className="fixed top-24 right-6 z-[9999] flex flex-col gap-3 pointer-events-none"
+      className="fixed top-24 right-6 z-[99999] flex flex-col gap-3 pointer-events-none"
+      style={{ isolation: 'isolate' }}
     >
       {/* Remote Video (Partner) */}
       {(remoteStream || isCalling) && (

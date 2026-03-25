@@ -145,7 +145,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   // 1. Listen for incoming calls in all user rooms
   useEffect(() => {
     if (!user || !userData?.rooms || isCallActive || isCalling) {
-      if (!isCallActive && !isCalling) setIncomingCall(null);
+      // If we are already in a call or calling, we don't need to listen for new offers
       return;
     }
 
@@ -159,9 +159,10 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
         if (data?.offer && !data.answer) {
           const isFromPartner = data.offer.senderId !== user.uid;
           const createdAt = data.offer.createdAt?.toMillis() || Date.now();
-          const isRecent = (Date.now() - createdAt) < 300000; // 5 mins
+          const isRecent = (Date.now() - createdAt) < 300000;
           
           if (isFromPartner && isRecent) {
+             console.log("Incoming offer detected in room:", roomId);
              setIncomingCall({ roomId, fromName: "Study Partner" });
           }
         } else if (!data?.offer) {
@@ -176,6 +177,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   // 2. Auto-Accept when initialized
   useEffect(() => {
     if (isInitialized && incomingCall && !isCallActive && !isCalling) {
+      console.log("Auto-accepting incoming call...");
       acceptCall();
     }
   }, [isInitialized, incomingCall, isCallActive, isCalling]);
@@ -188,12 +190,17 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     const primaryRoomId = userData.rooms[0];
     
     const checkPartnerAndStart = async () => {
+       // Ensure we are STILL not in a call before initiating
+       if (isCallActive || isCalling || incomingCall) return;
+
        try {
          const { getPartnerData } = await import('@/firebase/roomService');
          const partner = await getPartnerData(primaryRoomId, user.uid);
+         
          if (partner?.uid && partner.isOnline) {
             // Deterministic initiator: only start if my UID is "smaller"
             if (user.uid < partner.uid) {
+               console.log("Partner online, initiating auto-start...");
                startCall(primaryRoomId);
             }
          }
@@ -202,7 +209,8 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
        }
     };
 
-    const timer = setTimeout(checkPartnerAndStart, 5000); // 5s delay to allow sync
+    // Fast check (2s instead of 5s)
+    const timer = setTimeout(checkPartnerAndStart, 2000); 
     return () => clearTimeout(timer);
   }, [isInitialized, isCallActive, isCalling, incomingCall, user, userData?.rooms]);
 
