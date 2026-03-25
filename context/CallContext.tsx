@@ -17,6 +17,7 @@ interface CallContextType {
   endCall: () => Promise<void>;
   incomingCall: { roomId: string; fromName: string } | null;
   acceptCall: () => Promise<void>;
+  connectionState: RTCIceConnectionState;
 }
 
 const CallContext = createContext<CallContextType | null>(null);
@@ -36,6 +37,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   const [isCalling, setIsCalling] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [incomingCall, setIncomingCall] = useState<{ roomId: string; fromName: string } | null>(null);
+  const [connectionState, setConnectionState] = useState<RTCIceConnectionState>('new');
   
   const callSessionRef = useRef<CallSession | null>(null);
   const currentRoomIdRef = useRef<string | null>(null);
@@ -58,11 +60,11 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
        setIsInitialized(true);
      }
   }, []);
-
   const startCall = async (roomId: string) => {
     if (!user) return;
     try {
       setIsCalling(true);
+      setConnectionState('new');
       let stream = localStream;
       if (!stream) {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -72,6 +74,10 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       const session = new CallSession(roomId);
       callSessionRef.current = session;
       currentRoomIdRef.current = roomId;
+
+      session.onConnectionStateChange((state) => {
+        setConnectionState(state);
+      });
 
       session.onRemoteStream((remote) => {
         setRemoteStream(remote);
@@ -90,6 +96,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     const call = incomingCall;
     if (!call || !user) return;
     try {
+      setConnectionState('new');
       let stream = localStream;
       if (!stream) {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -99,6 +106,10 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       const session = new CallSession(call.roomId);
       callSessionRef.current = session;
       currentRoomIdRef.current = call.roomId;
+
+      session.onConnectionStateChange((state) => {
+        setConnectionState(state);
+      });
 
       session.onRemoteStream((remote) => {
         setRemoteStream(remote);
@@ -120,6 +131,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     setIsCallActive(false);
     setIsCalling(false);
     setIncomingCall(null);
+    setConnectionState('closed');
     callSessionRef.current = null;
     currentRoomIdRef.current = null;
   };
@@ -222,7 +234,8 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       startCall, 
       endCall, 
       incomingCall, 
-      acceptCall 
+      acceptCall,
+      connectionState
     }}>
       {children}
     </CallContext.Provider>

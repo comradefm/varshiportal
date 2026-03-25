@@ -27,11 +27,21 @@ export class CallSession {
   roomId: string;
   callId: string;
   iceCandidateQueue: RTCIceCandidate[] = [];
+  private unsubs: (() => void)[] = [];
+  private onConnectionState?: (state: RTCIceConnectionState) => void;
 
   constructor(roomId: string) {
     this.pc = new RTCPeerConnection(servers);
     this.roomId = roomId;
     this.callId = "current_call";
+
+    this.pc.oniceconnectionstatechange = () => {
+      this.onConnectionState?.(this.pc.iceConnectionState);
+    };
+  }
+
+  onConnectionStateChange(callback: (state: RTCIceConnectionState) => void) {
+    this.onConnectionState = callback;
   }
 
   private async addCandidate(candidate: any) {
@@ -81,7 +91,7 @@ export class CallSession {
     await setDoc(callDoc, { offer });
 
     // Listen for answer
-    onSnapshot(callDoc, (snapshot) => {
+    const unsubAnswer = onSnapshot(callDoc, (snapshot) => {
       const data = snapshot.data();
       if (!this.pc.currentRemoteDescription && data?.answer) {
         const answerDescription = new RTCSessionDescription(data.answer);
@@ -90,15 +100,17 @@ export class CallSession {
         });
       }
     });
+    this.unsubs.push(unsubAnswer);
 
     // Listen for ICE candidates from the answerer
-    onSnapshot(answerCandidates, (snapshot) => {
+    const unsubIce = onSnapshot(answerCandidates, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
           this.addCandidate(change.doc.data());
         }
       });
     });
+    this.unsubs.push(unsubIce);
   }
 
   async answerCall(localStream: MediaStream, userId: string) {
@@ -135,13 +147,14 @@ export class CallSession {
 
     await updateDoc(callDoc, { answer });
 
-    onSnapshot(offerCandidates, (snapshot) => {
+    const unsubIce = onSnapshot(offerCandidates, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
           this.addCandidate(change.doc.data());
         }
       });
     });
+    this.unsubs.push(unsubIce);
   }
 
   onRemoteStream(callback: (stream: MediaStream) => void) {
@@ -152,8 +165,16 @@ export class CallSession {
     };
   }
 
+  async cleanup() {
+    this.unsubs.forEach(unsub => unsub());
+    this.unsubs = [];
+    if (this.pc.signalingState !== "closed") {
+      this.pc.close();
+    }
+  }
+
   async endCall() {
-    this.pc.close();
+    await this.cleanup();
     const callDoc = doc(db, "rooms", this.roomId, "call", this.callId);
     
     try {

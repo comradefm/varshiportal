@@ -10,6 +10,7 @@ import {
   updateDoc,
   doc,
   getDocs,
+  writeBatch,
 } from "firebase/firestore";
 
 export const sendMessage = async (roomId, senderId, messageText, replyTo = null) => {
@@ -75,10 +76,13 @@ export const markMessagesAsSeen = async (roomId, currentUserId) => {
     );
     
     const snapshot = await getDocs(q);
-    const promises = snapshot.docs.map((messageDoc) =>
-      updateDoc(doc(db, "messages", messageDoc.id), { status: "seen" })
-    );
-    await Promise.all(promises);
+    if (snapshot.empty) return;
+
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((messageDoc) => {
+      batch.update(messageDoc.ref, { status: "seen" });
+    });
+    await batch.commit();
   } catch (error) {
     console.error("Error marking messages as seen:", error);
   }

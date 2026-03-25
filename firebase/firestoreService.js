@@ -14,6 +14,7 @@ import {
   onSnapshot,
   arrayRemove,
   arrayUnion,
+  writeBatch,
 } from "firebase/firestore";
 
 // ─── User ────────────────────────────────────────────────────────────────────
@@ -149,8 +150,8 @@ export const updateCourseProgress = async (userId, courseId, progress) => {
 /** Seeds default JEE/NEET themed courses on first setup */
 export const seedDefaultCourses = async (userId, subjects) => {
   try {
-    const existing = await getCourses(userId);
-    if (existing.length > 0) return; // already seeded
+    const existing = await getDocs(query(collection(db, "users", userId, "courses")));
+    if (!existing.empty) return; // already seeded
 
     const subjectMap = {
       Physics: { color: "bg-violet-500", defaultProgress: 15 },
@@ -160,19 +161,22 @@ export const seedDefaultCourses = async (userId, subjects) => {
       English: { color: "bg-amber-500", defaultProgress: 30 },
     };
 
+    const batch = writeBatch(db);
     for (let i = 0; i < subjects.length; i++) {
       const subject = subjects[i];
       const meta = subjectMap[subject] || {
         color: COLORS[i % COLORS.length],
         defaultProgress: 10,
       };
-      await addDoc(collection(db, "users", userId, "courses"), {
+      const ref = doc(collection(db, "users", userId, "courses"));
+      batch.set(ref, {
         name: subject,
         progress: meta.defaultProgress,
         color: meta.color,
         createdAt: serverTimestamp(),
       });
     }
+    await batch.commit();
   } catch (error) {
     console.error("Error seeding courses:", error);
     throw error;
@@ -424,23 +428,42 @@ export const seedCurriculum = async (userId, examTarget, subjects) => {
     const curriculum = CURRICULUM_DATA[examTarget];
     if (!curriculum) return;
 
-    let noteCount = 0;
+    const batch = writeBatch(db);
+    let count = 0;
 
     for (const subject of subjects) {
       const data = curriculum[subject];
       if (data) {
         for (const noteTitle of data.notes) {
-          await addNote(userId, { title: noteTitle, subject }, noteCount);
-          noteCount++;
+          const color = NOTE_COLORS[count % NOTE_COLORS.length];
+          const ref = doc(collection(db, "users", userId, "notes"));
+          batch.set(ref, {
+            title: noteTitle,
+            subject,
+            color,
+            createdAt: serverTimestamp(),
+          });
+          count++;
         }
         
         for (const assign of data.assignments) {
           const due = new Date();
           due.setDate(due.getDate() + assign.dueDays);
           const dueDate = due.toISOString().split('T')[0];
-          await addAssignment(userId, { title: assign.title, subject, dueDate });
+          const ref = doc(collection(db, "users", userId, "assignments"));
+          batch.set(ref, {
+            title: assign.title,
+            subject,
+            dueDate,
+            done: false,
+            createdAt: serverTimestamp(),
+          });
         }
       }
+    }
+    
+    if (count > 0 || subjects.length > 0) {
+      await batch.commit();
     }
   } catch (error) {
     console.error("Error seeding curriculum:", error);
