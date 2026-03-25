@@ -62,11 +62,17 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
   const startCall = async (roomId: string) => {
     if (!user) return;
+    if (callSessionRef.current) {
+        console.warn("[CallContext] Call already in progress, cleaning up old session");
+        await endCall();
+    }
     try {
+      console.log(`[CallContext] Starting call to room: ${roomId}`);
       setIsCalling(true);
       setConnectionState('new');
       let stream = localStream;
       if (!stream) {
+        console.log("[CallContext] No local stream, requesting media...");
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         setLocalStream(stream);
       }
@@ -76,18 +82,21 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       currentRoomIdRef.current = roomId;
 
       session.onConnectionStateChange((state) => {
+        console.log(`[CallContext] Connection state changed: ${state}`);
         setConnectionState(state);
       });
 
       session.onRemoteStream((remote) => {
+        console.log("[CallContext] Remote stream received in context");
         setRemoteStream(remote);
         setIsCallActive(true);
         setIsCalling(false);
       });
 
       await session.createOffer(stream, user.uid);
+      console.log("[CallContext] Offer created and sent");
     } catch (err) {
-      console.error("Failed to start call:", err);
+      console.error("[CallContext] Failed to start call:", err);
       setIsCalling(false);
     }
   };
@@ -95,10 +104,16 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   const acceptCall = async () => {
     const call = incomingCall;
     if (!call || !user) return;
+    if (callSessionRef.current) {
+        console.warn("[CallContext] Already in session, cleaning up before accepting");
+        await endCall();
+    }
     try {
+      console.log(`[CallContext] Accepting call from room: ${call.roomId}`);
       setConnectionState('new');
       let stream = localStream;
       if (!stream) {
+        console.log("[CallContext] No local stream, requesting media...");
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         setLocalStream(stream);
       }
@@ -108,22 +123,26 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       currentRoomIdRef.current = call.roomId;
 
       session.onConnectionStateChange((state) => {
+        console.log(`[CallContext] Connection state changed: ${state}`);
         setConnectionState(state);
       });
 
       session.onRemoteStream((remote) => {
+        console.log("[CallContext] Remote stream received in context");
         setRemoteStream(remote);
         setIsCallActive(true);
       });
 
       await session.answerCall(stream, user.uid);
+      console.log("[CallContext] Answer created and sent");
       setIncomingCall(null);
     } catch (err) {
-      console.error("Failed to accept call:", err);
+      console.error("[CallContext] Failed to accept call:", err);
     }
   };
 
   const endCall = async () => {
+    console.log("[CallContext] Ending call...");
     if (callSessionRef.current) {
       await callSessionRef.current.endCall();
     }
@@ -134,6 +153,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     setConnectionState('closed');
     callSessionRef.current = null;
     currentRoomIdRef.current = null;
+    console.log("[CallContext] Session cleared");
   };
 
   // Cleanup on tab close/nav

@@ -159,8 +159,15 @@ export class CallSession {
 
   onRemoteStream(callback: (stream: MediaStream) => void) {
     this.pc.ontrack = (event) => {
+      console.log(`[CallSession] Remote track received: ${event.track.kind}`);
       if (event.streams && event.streams[0]) {
+        console.log("[CallSession] Using event.streams[0]");
         callback(event.streams[0]);
+      } else {
+        console.log("[CallSession] Fallback: creating new MediaStream from track");
+        const inboundStream = new MediaStream();
+        inboundStream.addTrack(event.track);
+        callback(inboundStream);
       }
     };
   }

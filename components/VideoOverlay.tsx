@@ -9,15 +9,24 @@ const VideoOverlay = () => {
   const { localStream, remoteStream, isCallActive, isCalling, endCall, connectionState } = useCall();
   const { userData } = useAuth();
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
   const pathname = usePathname();
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
-      console.log("Attaching remote stream to video element");
+      console.log("[VideoOverlay] Attaching remote stream");
       remoteVideoRef.current.srcObject = remoteStream;
-      remoteVideoRef.current.play().catch(e => console.log("Auto-play blocked:", e));
+      remoteVideoRef.current.play().catch(e => console.log("[VideoOverlay] Remote play blocked:", e));
     }
   }, [remoteStream, isCallActive, isCalling]);
+
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      console.log("[VideoOverlay] Attaching local stream");
+      localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(e => console.log("[VideoOverlay] Local play blocked:", e));
+    }
+  }, [localStream]);
 
   const isAlwaysOn = !!userData?.alwaysOnVideo;
   const isInChat = pathname === '/chat';
@@ -53,8 +62,22 @@ const VideoOverlay = () => {
           autoPlay
           playsInline
           muted
-          className="w-full h-full object-cover pointer-events-none select-none"
+          className="w-full h-full object-cover pointer-events-none select-none bg-black"
         />
+
+        {/* Local Video Preview (Self) */}
+        {localStream && (
+          <div className="absolute top-3 left-3 w-12 h-16 md:w-14 md:h-20 bg-zinc-900 border border-white/20 rounded-lg overflow-hidden z-10 shadow-lg ring-1 ring-black/50">
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+              style={{ transform: 'scaleX(-1)' }} // Mirror local view
+            />
+          </div>
+        )}
         
         {!remoteStream && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none px-4 text-center">
