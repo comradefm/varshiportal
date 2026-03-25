@@ -4,6 +4,7 @@ import { CallSession } from '@/firebase/callService';
 import { db } from '@/firebase/firebaseConfig';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
+import { usePathname } from 'next/navigation';
 
 interface CallContextType {
   localStream: MediaStream | null;
@@ -28,6 +29,7 @@ export const useCall = () => {
 
 export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   const { user, userData } = useAuth();
+  const pathname = usePathname();
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isCallActive, setIsCallActive] = useState(false);
@@ -54,7 +56,6 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
      const saved = sessionStorage.getItem('study_portal_initialized');
      if (saved === 'true') {
        setIsInitialized(true);
-       // We don't auto-start media here to avoid permission prompts until necessary
      }
   }, []);
 
@@ -115,9 +116,6 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     if (callSessionRef.current) {
       await callSessionRef.current.endCall();
     }
-    // Don't stop local tracks so user doesn't have to re-grant permission
-    // unless they actually want to turn off the camera.
-    // For this MVP, we'll keep the stream alive for the session.
     setRemoteStream(null);
     setIsCallActive(false);
     setIsCalling(false);
@@ -130,9 +128,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const handleUnload = () => {
       if (callSessionRef.current) {
-        // Sync cleanup is hard in beforeunload, but we can try
         const callDoc = doc(db, "rooms", currentRoomIdRef.current!, "call", "current_call");
-        // We can't use async here reliably, but pc.close() helps
         callSessionRef.current.pc.close();
       }
     };
@@ -140,14 +136,11 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
-  // --- NEW: Global Signaling & Auto-Management ---
+  // --- NEW: Global Signaling & Auto-Management (Conditional) ---
 
-  // 1. Listen for incoming calls in all user rooms
+  // 1. Listen for incoming calls
   useEffect(() => {
-    if (!user || !userData?.rooms || isCallActive || isCalling) {
-      // If we are already in a call or calling, we don't need to listen for new offers
-      return;
-    }
+    if (!user || !userData?.rooms || isCallActive || isCalling) return;
 
     const rooms = userData.rooms;
     if (rooms.length === 0) return;
@@ -162,7 +155,6 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
           const isRecent = (Date.now() - createdAt) < 300000;
           
           if (isFromPartner && isRecent) {
-             console.log("Incoming offer detected in room:", roomId);
              setIncomingCall({ roomId, fromName: "Study Partner" });
           }
         } else if (!data?.offer) {
@@ -174,23 +166,31 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     return () => unsubs.forEach((unsub: any) => unsub());
   }, [user, userData?.rooms, isCallActive, isCalling]);
 
-  // 2. Auto-Accept when initialized
+  // 2. Auto-Accept (Respect Toggle and Path)
   useEffect(() => {
     if (isInitialized && incomingCall && !isCallActive && !isCalling) {
-      console.log("Auto-accepting incoming call...");
-      acceptCall();
+      const isAlwaysOn = !!userData?.alwaysOnVideo;
+      const isInChat = pathname === '/chat';
+      
+      if (isAlwaysOn || isInChat) {
+        console.log("Auto-accepting call (Always-on or Chat)");
+        acceptCall();
+      }
     }
-  }, [isInitialized, incomingCall, isCallActive, isCalling]);
+  }, [isInitialized, incomingCall, isCallActive, isCalling, userData?.alwaysOnVideo, pathname]);
 
-  // 3. Auto-Start if partner is online and no call active
+  // 3. Auto-Start (Respect Toggle and Path)
   useEffect(() => {
     if (!user || !userData?.rooms || userData.rooms.length === 0) return;
     if (!isInitialized || isCallActive || isCalling || incomingCall) return;
 
+    const isAlwaysOn = !!userData?.alwaysOnVideo;
+    const isInChat = pathname === '/chat';
+    if (!isAlwaysOn && !isInChat) return;
+
     const primaryRoomId = userData.rooms[0];
     
     const checkPartnerAndStart = async () => {
-       // Ensure we are STILL not in a call before initiating
        if (isCallActive || isCalling || incomingCall) return;
 
        try {
@@ -198,9 +198,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
          const partner = await getPartnerData(primaryRoomId, user.uid);
          
          if (partner?.uid && partner.isOnline) {
-            // Deterministic initiator: only start if my UID is "smaller"
             if (user.uid < partner.uid) {
-               console.log("Partner online, initiating auto-start...");
                startCall(primaryRoomId);
             }
          }
@@ -209,10 +207,9 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
        }
     };
 
-    // Fast check (2s instead of 5s)
     const timer = setTimeout(checkPartnerAndStart, 2000); 
     return () => clearTimeout(timer);
-  }, [isInitialized, isCallActive, isCalling, incomingCall, user, userData?.rooms]);
+  }, [isInitialized, isCallActive, isCalling, incomingCall, user, userData?.rooms, userData?.alwaysOnVideo, pathname]);
 
   return (
     <CallContext.Provider value={{ 

@@ -2,10 +2,12 @@
 import React, { useEffect, useRef } from 'react';
 import { useCall } from '@/context/CallContext';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { motion } from 'framer-motion';
 
 const VideoOverlay = () => {
   const { localStream, remoteStream, isCallActive, isCalling, endCall } = useCall();
+  const { userData } = useAuth();
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const pathname = usePathname();
 
@@ -19,8 +21,13 @@ const VideoOverlay = () => {
     }
   }, [remoteStream, isCallActive, isCalling]);
 
-  // If no partner stream and not calling, don't show anything
-  if (!remoteStream && !isCalling) return null;
+  // Visibility logic:
+  // Show if: (we have a stream or are calling) AND (Always-on is ON OR we are in /chat)
+  const isAlwaysOn = userData?.alwaysOnVideo;
+  const isInChat = pathname === '/chat';
+  
+  if (!(remoteStream || isCalling)) return null;
+  if (!isInChat && !isAlwaysOn) return null;
 
   return (
     <motion.div 

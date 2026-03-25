@@ -330,8 +330,19 @@ export default function Dashboard() {
     );
   }
 
+  const handleToggleAlwaysOn = async () => {
+    if (!user) return;
+    const newValue = !userData?.alwaysOnVideo;
+    try {
+      const { updateAlwaysOnVideo } = await import("@/firebase/firestoreService");
+      await updateAlwaysOnVideo(user.uid, newValue);
+    } catch (err) {
+      console.error("Toggle failed:", err);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-[#0a0a0f] text-white font-sans">
       {/* Modals */}
       {showAddAssignment && (
         <AddAssignmentModal
@@ -358,9 +369,21 @@ export default function Dashboard() {
           </div>
           <span className="font-semibold tracking-tight">StudyPortal</span>
         </div>
-        <Link href="/settings" id="settings-link" className="w-9 h-9 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-sm font-bold text-indigo-300 hover:bg-indigo-600/30 transition">
-          {initials}
-        </Link>
+        
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={handleToggleAlwaysOn}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all active:scale-95 ${userData?.alwaysOnVideo ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-400' : 'bg-zinc-800/10 border-zinc-800 text-zinc-500 hover:bg-zinc-800/20'}`}
+            title={userData?.alwaysOnVideo ? "Disable Always-on Video" : "Enable Always-on Video"}
+          >
+            <div className={`w-1.5 h-1.5 rounded-full ${userData?.alwaysOnVideo ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-zinc-600'}`} />
+            <span className="text-[9px] font-bold uppercase tracking-widest hidden sm:block">Always-on {userData?.alwaysOnVideo ? 'ON' : 'OFF'}</span>
+          </button>
+
+          <Link href="/settings" id="settings-link" className="w-9 h-9 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-sm font-bold text-indigo-300 hover:bg-indigo-600/30 transition">
+            {initials}
+          </Link>
+        </div>
       </header>
 
       <main className="px-5 py-6 max-w-2xl mx-auto space-y-5 animate-fade-in">

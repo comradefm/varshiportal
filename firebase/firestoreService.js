@@ -77,6 +77,15 @@ export const updateUserExamTarget = async (userId, examTarget) => {
   }
 };
 
+export const updateAlwaysOnVideo = async (userId, enabled) => {
+  try {
+    await updateDoc(doc(db, "users", userId), { alwaysOnVideo: enabled });
+  } catch (error) {
+    console.error("Error updating always-on video preference:", error);
+    throw error;
+  }
+};
+
 export const updateUserPresence = async (userId, isOnline) => {
   try {
     // Use setDoc with merge: true to avoid "No document to update" error if user doc is missing
