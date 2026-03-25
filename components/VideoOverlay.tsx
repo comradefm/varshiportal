@@ -12,21 +12,14 @@ const VideoOverlay = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const pathname = usePathname();
 
-  useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      console.log("[VideoOverlay] Attaching remote stream");
-      remoteVideoRef.current.srcObject = remoteStream;
-      remoteVideoRef.current.play().catch(e => console.log("[VideoOverlay] Remote play blocked:", e));
+  const attachStream = (el: HTMLVideoElement | null, stream: MediaStream | null, name: string) => {
+    if (el && stream && el.srcObject !== stream) {
+      console.log(`[VideoOverlay] Attaching ${name} stream`);
+      el.srcObject = stream;
+      el.muted = true;
+      el.play().catch(e => console.error(`[VideoOverlay] ${name} play failed:`, e));
     }
-  }, [remoteStream, isCallActive, isCalling]);
-
-  useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      console.log("[VideoOverlay] Attaching local stream");
-      localVideoRef.current.srcObject = localStream;
-      localVideoRef.current.play().catch(e => console.log("[VideoOverlay] Local play blocked:", e));
-    }
-  }, [localStream]);
+  };
 
   const isAlwaysOn = !!userData?.alwaysOnVideo;
   const isInChat = pathname === '/chat';
@@ -58,7 +51,7 @@ const VideoOverlay = () => {
         className="relative w-40 h-52 md:w-48 md:h-64 bg-[#0d0d17] border border-indigo-500/30 rounded-2xl overflow-hidden shadow-2xl pointer-events-auto cursor-grab ring-1 ring-white/10 group"
       >
         <video
-          ref={remoteVideoRef}
+          ref={(el) => attachStream(el, remoteStream, 'remote')}
           autoPlay
           playsInline
           muted
@@ -69,7 +62,7 @@ const VideoOverlay = () => {
         {localStream && (
           <div className="absolute top-3 left-3 w-12 h-16 md:w-14 md:h-20 bg-zinc-900 border border-white/20 rounded-lg overflow-hidden z-10 shadow-lg ring-1 ring-black/50">
             <video
-              ref={localVideoRef}
+              ref={(el) => attachStream(el, localStream, 'local')}
               autoPlay
               playsInline
               muted
