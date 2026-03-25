@@ -38,39 +38,7 @@ export default function Chat() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { startCall, isCallActive, isCalling, acceptCall, isInitialized } = useCall();
-  const [hasIncomingOffer, setHasIncomingOffer] = useState(false);
-
-  // Auto-start or auto-join session if initialized
-  useEffect(() => {
-    if (isInitialized && activeRoomId && !isCallActive && !isCalling) {
-      // If there's an incoming offer, we could auto-join, but let's just start to be safe
-      // Actually, if an offer exists, we should auto-accept.
-      if (hasIncomingOffer) {
-        acceptCall();
-      } else {
-        startCall(activeRoomId);
-      }
-    }
-  }, [isInitialized, activeRoomId, hasIncomingOffer, isCallActive, isCalling, startCall, acceptCall]);
-
-  // Listen for incoming call in the active room
-  useEffect(() => {
-    if (!activeRoomId || isCallActive || isCalling) {
-      setHasIncomingOffer(false);
-      return;
-    }
-    const callDoc = doc(db, "rooms", activeRoomId, "call", "current_call");
-    const unsub = onSnapshot(callDoc, (snapshot) => {
-      const data = snapshot.data();
-      if (data?.offer && !data.answer) {
-        setHasIncomingOffer(true);
-      } else {
-        setHasIncomingOffer(false);
-      }
-    });
-    return () => unsub();
-  }, [activeRoomId, isCallActive, isCalling]);
-
+  // Double tap to exit
   const handleDoubleTapExit = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('a') || target.closest('input') || target.closest('textarea')) return;
@@ -246,10 +214,26 @@ export default function Chat() {
   };
 
   const formatLastSeen = (timestamp: any) => {
-    if (!timestamp) return "Never";
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    if (!timestamp) return "Offline";
+    
+    let date: Date;
+    if (timestamp.toDate) {
+      date = timestamp.toDate();
+    } else if (timestamp instanceof Date) {
+      date = timestamp;
+    } else if (typeof timestamp === 'number') {
+      date = new Date(timestamp);
+    } else if (timestamp.seconds) {
+      // Handle simple timestamp objects if they aren't class instances
+      date = new Date(timestamp.seconds * 1000);
+    } else {
+      date = new Date(timestamp);
+    }
+
     const now = new Date();
     const diff = now.getTime() - date.getTime();
+    
+    if (diff < 0) return "Just now"; // Handle minor clock skew
     if (diff < 60000) return "Just now";
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;

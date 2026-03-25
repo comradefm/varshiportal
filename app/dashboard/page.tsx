@@ -330,10 +330,6 @@ export default function Dashboard() {
     );
   }
 
-  if (!isInitialized) {
-    return <WelcomeOverlay onContinue={initializeMedia} />;
-  }
-
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
       {/* Modals */}

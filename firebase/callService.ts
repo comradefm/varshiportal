@@ -9,7 +9,8 @@ import {
   updateDoc,
   deleteDoc,
   query,
-  getDocs
+  getDocs,
+  serverTimestamp
 } from "firebase/firestore";
 
 const servers = {
@@ -25,14 +26,34 @@ export class CallSession {
   pc: RTCPeerConnection;
   roomId: string;
   callId: string;
+  iceCandidateQueue: RTCIceCandidate[] = [];
 
   constructor(roomId: string) {
     this.pc = new RTCPeerConnection(servers);
     this.roomId = roomId;
-    this.callId = "current_call"; // We'll use a fixed ID per room for simplicity
+    this.callId = "current_call";
   }
 
-  async createOffer(localStream: MediaStream) {
+  private async addCandidate(candidate: any) {
+    try {
+      if (this.pc.remoteDescription) {
+        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } else {
+        this.iceCandidateQueue.push(new RTCIceCandidate(candidate));
+      }
+    } catch (e) {
+      console.error("Error adding ice candidate", e);
+    }
+  }
+
+  private async processQueuedCandidates() {
+    while (this.iceCandidateQueue.length > 0) {
+      const candidate = this.iceCandidateQueue.shift();
+      if (candidate) await this.pc.addIceCandidate(candidate);
+    }
+  }
+
+  async createOffer(localStream: MediaStream, userId: string) {
     localStream.getTracks().forEach((track) => {
       this.pc.addTrack(track, localStream);
     });
@@ -53,6 +74,8 @@ export class CallSession {
     const offer = {
       sdp: offerDescription.sdp,
       type: offerDescription.type,
+      senderId: userId,
+      createdAt: serverTimestamp()
     };
 
     await setDoc(callDoc, { offer });
@@ -62,7 +85,9 @@ export class CallSession {
       const data = snapshot.data();
       if (!this.pc.currentRemoteDescription && data?.answer) {
         const answerDescription = new RTCSessionDescription(data.answer);
-        this.pc.setRemoteDescription(answerDescription);
+        this.pc.setRemoteDescription(answerDescription).then(() => {
+          this.processQueuedCandidates();
+        });
       }
     });
 
@@ -70,14 +95,13 @@ export class CallSession {
     onSnapshot(answerCandidates, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
-          const data = change.doc.data();
-          this.pc.addIceCandidate(new RTCIceCandidate(data));
+          this.addCandidate(change.doc.data());
         }
       });
     });
   }
 
-  async answerCall(localStream: MediaStream) {
+  async answerCall(localStream: MediaStream, userId: string) {
     localStream.getTracks().forEach((track) => {
       this.pc.addTrack(track, localStream);
     });
@@ -94,7 +118,10 @@ export class CallSession {
 
     const callData = (await getDoc(callDoc)).data();
     const offerDescription = callData?.offer;
+    if (!offerDescription) throw new Error("No offer found to answer");
+
     await this.pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+    await this.processQueuedCandidates();
 
     const answerDescription = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answerDescription);
@@ -102,6 +129,8 @@ export class CallSession {
     const answer = {
       type: answerDescription.type,
       sdp: answerDescription.sdp,
+      senderId: userId,
+      createdAt: serverTimestamp()
     };
 
     await updateDoc(callDoc, { answer });
@@ -109,8 +138,7 @@ export class CallSession {
     onSnapshot(offerCandidates, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
-          const data = change.doc.data();
-          this.pc.addIceCandidate(new RTCIceCandidate(data));
+          this.addCandidate(change.doc.data());
         }
       });
     });
@@ -118,7 +146,9 @@ export class CallSession {
 
   onRemoteStream(callback: (stream: MediaStream) => void) {
     this.pc.ontrack = (event) => {
-      callback(event.streams[0]);
+      if (event.streams && event.streams[0]) {
+        callback(event.streams[0]);
+      }
     };
   }
 
@@ -126,13 +156,12 @@ export class CallSession {
     this.pc.close();
     const callDoc = doc(db, "rooms", this.roomId, "call", this.callId);
     
-    // Cleanup Firestore
     try {
       const offerCandidates = await getDocs(collection(callDoc, "offerCandidates"));
-      offerCandidates.forEach(async (d) => await deleteDoc(d.ref));
+      await Promise.all(offerCandidates.docs.map(d => deleteDoc(d.ref)));
       
       const answerCandidates = await getDocs(collection(callDoc, "answerCandidates"));
-      answerCandidates.forEach(async (d) => await deleteDoc(d.ref));
+      await Promise.all(answerCandidates.docs.map(d => deleteDoc(d.ref)));
       
       await deleteDoc(callDoc);
     } catch (e) {

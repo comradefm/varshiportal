@@ -15,9 +15,6 @@ const VideoOverlay = () => {
     }
   }, [remoteStream]);
 
-  // Only show the overlay in the chat room
-  if (pathname !== '/chat') return null;
-  
   // If no partner stream and not calling, don't show anything
   if (!remoteStream && !isCalling) return null;
 

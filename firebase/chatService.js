@@ -36,11 +36,22 @@ export const sendMessage = async (roomId, senderId, messageText, replyTo = null)
 export const setTypingStatus = async (roomId, userId, isTyping) => {
   try {
     const roomRef = doc(db, "rooms", roomId);
+    // Use an object update to be more efficient and avoid issues with missing top-level field
     await updateDoc(roomRef, {
       [`typing_status.${userId}`]: isTyping,
     });
   } catch (error) {
-    console.warn("Silent error updating typing status:", error);
+    // If updateDoc fails (e.g. typing_status doesn't exist on older rooms), fallback to setDoc
+    try {
+      const roomRef = doc(db, "rooms", roomId);
+      await setDoc(roomRef, {
+        typing_status: {
+          [userId]: isTyping
+        }
+      }, { merge: true });
+    } catch (innerError) {
+       console.warn("Silent error updating typing status:", innerError);
+    }
   }
 };
 

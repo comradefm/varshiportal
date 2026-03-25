@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { CallSession } from '@/firebase/callService';
 import { db } from '@/firebase/firebaseConfig';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { useAuth } from './AuthContext';
 
 interface CallContextType {
   localStream: MediaStream | null;
@@ -26,6 +27,7 @@ export const useCall = () => {
 };
 
 export const CallProvider = ({ children }: { children: React.ReactNode }) => {
+  const { user, userData } = useAuth();
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isCallActive, setIsCallActive] = useState(false);
@@ -38,10 +40,10 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
 
   const initializeMedia = async () => {
     try {
+      if (localStream) return; // Already initialized
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       setLocalStream(stream);
       setIsInitialized(true);
-      // Store initialization in sessionStorage for the duration of tab
       sessionStorage.setItem('study_portal_initialized', 'true');
     } catch (err) {
       console.error("Media init failed:", err);
@@ -50,14 +52,21 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
      const saved = sessionStorage.getItem('study_portal_initialized');
-     if (saved === 'true') setIsInitialized(true);
+     if (saved === 'true') {
+       setIsInitialized(true);
+       // We don't auto-start media here to avoid permission prompts until necessary
+     }
   }, []);
 
   const startCall = async (roomId: string) => {
+    if (!user) return;
     try {
       setIsCalling(true);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      setLocalStream(stream);
+      let stream = localStream;
+      if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        setLocalStream(stream);
+      }
       
       const session = new CallSession(roomId);
       callSessionRef.current = session;
@@ -69,7 +78,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
         setIsCalling(false);
       });
 
-      await session.createOffer(stream);
+      await session.createOffer(stream, user.uid);
     } catch (err) {
       console.error("Failed to start call:", err);
       setIsCalling(false);
@@ -77,21 +86,25 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const acceptCall = async () => {
-    if (!incomingCall) return;
+    const call = incomingCall;
+    if (!call || !user) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      setLocalStream(stream);
+      let stream = localStream;
+      if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        setLocalStream(stream);
+      }
 
-      const session = new CallSession(incomingCall.roomId);
+      const session = new CallSession(call.roomId);
       callSessionRef.current = session;
-      currentRoomIdRef.current = incomingCall.roomId;
+      currentRoomIdRef.current = call.roomId;
 
       session.onRemoteStream((remote) => {
         setRemoteStream(remote);
         setIsCallActive(true);
       });
 
-      await session.answerCall(stream);
+      await session.answerCall(stream, user.uid);
       setIncomingCall(null);
     } catch (err) {
       console.error("Failed to accept call:", err);
@@ -102,8 +115,9 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     if (callSessionRef.current) {
       await callSessionRef.current.endCall();
     }
-    localStream?.getTracks().forEach(t => t.stop());
-    setLocalStream(null);
+    // Don't stop local tracks so user doesn't have to re-grant permission
+    // unless they actually want to turn off the camera.
+    // For this MVP, we'll keep the stream alive for the session.
     setRemoteStream(null);
     setIsCallActive(false);
     setIsCalling(false);
@@ -112,9 +126,85 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     currentRoomIdRef.current = null;
   };
 
-  // Listen for incoming calls (simplified: assuming user is in rooms)
-  // In a real app, you'd subscribe to all user's rooms for an 'offer'
-  // For this MVP, we'll implement a simpler trigger in the Chat page
+  // Cleanup on tab close/nav
+  useEffect(() => {
+    const handleUnload = () => {
+      if (callSessionRef.current) {
+        // Sync cleanup is hard in beforeunload, but we can try
+        const callDoc = doc(db, "rooms", currentRoomIdRef.current!, "call", "current_call");
+        // We can't use async here reliably, but pc.close() helps
+        callSessionRef.current.pc.close();
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, []);
+
+  // --- NEW: Global Signaling & Auto-Management ---
+
+  // 1. Listen for incoming calls in all user rooms
+  useEffect(() => {
+    if (!user || !userData?.rooms || isCallActive || isCalling) {
+      if (!isCallActive && !isCalling) setIncomingCall(null);
+      return;
+    }
+
+    const rooms = userData.rooms;
+    if (rooms.length === 0) return;
+
+    const unsubs = rooms.map((roomId: string) => {
+      const callDoc = doc(db, "rooms", roomId, "call", "current_call");
+      return onSnapshot(callDoc, (snapshot) => {
+        const data = snapshot.data();
+        if (data?.offer && !data.answer) {
+          const isFromPartner = data.offer.senderId !== user.uid;
+          const createdAt = data.offer.createdAt?.toMillis() || Date.now();
+          const isRecent = (Date.now() - createdAt) < 300000; // 5 mins
+          
+          if (isFromPartner && isRecent) {
+             setIncomingCall({ roomId, fromName: "Study Partner" });
+          }
+        } else if (!data?.offer) {
+          setIncomingCall(prev => prev?.roomId === roomId ? null : prev);
+        }
+      });
+    });
+
+    return () => unsubs.forEach((unsub: any) => unsub());
+  }, [user, userData?.rooms, isCallActive, isCalling]);
+
+  // 2. Auto-Accept when initialized
+  useEffect(() => {
+    if (isInitialized && incomingCall && !isCallActive && !isCalling) {
+      acceptCall();
+    }
+  }, [isInitialized, incomingCall, isCallActive, isCalling]);
+
+  // 3. Auto-Start if partner is online and no call active
+  useEffect(() => {
+    if (!user || !userData?.rooms || userData.rooms.length === 0) return;
+    if (!isInitialized || isCallActive || isCalling || incomingCall) return;
+
+    const primaryRoomId = userData.rooms[0];
+    
+    const checkPartnerAndStart = async () => {
+       try {
+         const { getPartnerData } = await import('@/firebase/roomService');
+         const partner = await getPartnerData(primaryRoomId, user.uid);
+         if (partner?.uid && partner.isOnline) {
+            // Deterministic initiator: only start if my UID is "smaller"
+            if (user.uid < partner.uid) {
+               startCall(primaryRoomId);
+            }
+         }
+       } catch (err) {
+         console.error("Auto-start check failed:", err);
+       }
+    };
+
+    const timer = setTimeout(checkPartnerAndStart, 5000); // 5s delay to allow sync
+    return () => clearTimeout(timer);
+  }, [isInitialized, isCallActive, isCalling, incomingCall, user, userData?.rooms]);
 
   return (
     <CallContext.Provider value={{ 

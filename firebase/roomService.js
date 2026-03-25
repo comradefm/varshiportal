@@ -25,6 +25,7 @@ export const createRoom = async (userId) => {
       user_1: userId,
       user_2: null,
       created_at: serverTimestamp(),
+      typing_status: {},
     });
     // Store room_id back into the document
     await updateDoc(roomRef, { room_id: roomRef.id });

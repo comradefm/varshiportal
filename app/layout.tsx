@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import VideoOverlay from "@/components/VideoOverlay";
+import CallInitializer from "@/components/CallInitializer";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,6 +25,7 @@ export default function RootLayout({
           <CallProvider>
             {children}
             <VideoOverlay />
+            <CallInitializer />
           </CallProvider>
         </AuthProvider>
       </body>
