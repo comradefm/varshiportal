@@ -35,8 +35,8 @@ export default function MessageBubble({ text, senderName, isOwnMessage, replyTo,
                   : "bg-white/5 border-indigo-500/50 text-zinc-400 hover:bg-white/10"
               }`}
             >
-              <div className="font-bold opacity-80 mb-0.5">{replyTo.senderName}</div>
-              <div className="opacity-90 italic">{replyTo.text}</div>
+              <div className="font-bold opacity-80 mb-0.5 truncate">{replyTo.senderName}</div>
+              <div className="opacity-90 italic truncate">{replyTo.text}</div>
             </div>
           )}
           

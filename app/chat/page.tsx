@@ -223,6 +223,8 @@ export default function Chat() {
     else if (timestamp.seconds) date = new Date(timestamp.seconds * 1000);
     else date = new Date(timestamp);
 
+    if (isNaN(date.getTime())) return "Offline";
+
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     
