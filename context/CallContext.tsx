@@ -47,22 +47,24 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   const initializeMedia = async () => {
     try {
       if (localStream) return;
-      console.log("[CallContext] Initializing media (Welcome Overlay)");
+      console.log("[CallContext] Auto-initializing media stream");
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       setLocalStream(stream);
       setIsInitialized(true);
       sessionStorage.setItem('study_portal_initialized', 'true');
     } catch (err) {
       console.error("Media init failed:", err);
+      // Fallback mark initialized so signaling proceeds
+      setIsInitialized(true);
     }
   };
 
+  // Auto-initialize media as soon as user logs in
   useEffect(() => {
-     const saved = sessionStorage.getItem('study_portal_initialized');
-     if (saved === 'true') {
-       setIsInitialized(true);
-     }
-  }, []);
+    if (user && !isInitialized && !localStream) {
+      initializeMedia();
+    }
+  }, [user, isInitialized, localStream]);
 
   const startCall = async (roomId: string) => {
     if (!user) return;
@@ -159,7 +161,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
-  // 1. Listen for incoming calls
+  // 1. Listen for incoming calls across user's rooms
   useEffect(() => {
     if (!user || !userData?.rooms || isCallActive || isCalling) return;
     const rooms = userData.rooms;
@@ -174,7 +176,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
           const createdAt = data.offer.createdAt?.toMillis() || Date.now();
           const isRecent = (Date.now() - createdAt) < 300000;
           if (isFromPartner && isRecent) {
-             setIncomingCall({ roomId, fromName: "Study Partner" });
+             setIncomingCall({ roomId, fromName: "Partner" });
           }
         } else if (!data?.offer) {
           setIncomingCall(prev => prev?.roomId === roomId ? null : prev);
@@ -184,28 +186,22 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     return () => unsubs.forEach((unsub: any) => unsub());
   }, [user, userData?.rooms, isCallActive, isCalling]);
 
-  // 2. Auto-Accept (Respect Toggle, Path, and Exclusivity)
+  // 2. Auto-Accept incoming calls immediately without requiring user permission
   useEffect(() => {
-    if (isInitialized && incomingCall && !isCallActive && !isCalling) {
-      const isAlwaysOn = !!userData?.alwaysOnVideo;
-      const isInChat = pathname === '/chat';
+    if (incomingCall && !isCallActive && !isCalling) {
       const primaryRoomId = userData?.primaryRoomId;
       const isFromPrimary = !primaryRoomId || incomingCall.roomId === primaryRoomId;
       
-      if ((isAlwaysOn || isInChat) && isFromPrimary) {
+      if (isFromPrimary) {
         acceptCall();
       }
     }
-  }, [isInitialized, incomingCall, isCallActive, isCalling, userData?.alwaysOnVideo, userData?.primaryRoomId, pathname]);
+  }, [incomingCall, isCallActive, isCalling, userData?.primaryRoomId]);
 
-  // 3. Auto-Start (Respect Toggle, Path, and Exclusivity)
+  // 3. Auto-Start video telecast as soon as partner is online
   useEffect(() => {
     if (!user || !userData?.rooms || userData.rooms.length === 0) return;
-    if (!isInitialized || isCallActive || isCalling || incomingCall) return;
-
-    const isAlwaysOn = !!userData?.alwaysOnVideo;
-    const isInChat = pathname === '/chat';
-    if (!isAlwaysOn && !isInChat) return;
+    if (isCallActive || isCalling || incomingCall) return;
 
     const targetRoomId = userData?.primaryRoomId || userData.rooms[0];
     if (!targetRoomId) return;
@@ -222,9 +218,9 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
          console.error("Auto-start check failed:", err);
        }
     };
-    const timer = setTimeout(checkPartnerAndStart, 2000); 
+    const timer = setTimeout(checkPartnerAndStart, 1500); 
     return () => clearTimeout(timer);
-  }, [isInitialized, isCallActive, isCalling, incomingCall, user, userData?.rooms, userData?.alwaysOnVideo, userData?.primaryRoomId, pathname]);
+  }, [isCallActive, isCalling, incomingCall, user, userData?.rooms, userData?.primaryRoomId]);
 
   return (
     <CallContext.Provider value={{ 

@@ -221,6 +221,27 @@ export default function Dashboard() {
   const [showAddAssignment, setShowAddAssignment] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
 
+  // ── 4-Tap Secret Entry Gesture (Decoy Study Portal -> Secret Chat)
+  const tapCountRef = useRef<number>(0);
+  const tapTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleQuadrupleTapSecret = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('a') || target.closest('input') || target.closest('textarea')) return;
+
+    tapCountRef.current += 1;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+
+    if (tapCountRef.current >= 4) {
+      tapCountRef.current = 0;
+      router.push("/chat");
+    } else {
+      tapTimerRef.current = setTimeout(() => {
+        tapCountRef.current = 0;
+      }, 1000);
+    }
+  };
+
   // ── Guard
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -342,7 +363,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white font-sans">
+    <div className="min-h-screen bg-[#0a0a0f] text-white font-sans" onClick={handleQuadrupleTapSecret}>
       {/* Modals */}
       {showAddAssignment && (
         <AddAssignmentModal

@@ -26,7 +26,7 @@ export class CallSession {
   pc: RTCPeerConnection;
   roomId: string;
   callId: string;
-  iceCandidateQueue: RTCIceCandidate[] = [];
+  iceCandidateQueue: any[] = [];
   private unsubs: (() => void)[] = [];
   private onConnectionState?: (state: RTCIceConnectionState) => void;
 
@@ -46,10 +46,11 @@ export class CallSession {
 
   private async addCandidate(candidate: any) {
     try {
-      if (this.pc.remoteDescription) {
+      if (!candidate || !candidate.candidate) return;
+      if (this.pc.remoteDescription && this.pc.remoteDescription.type) {
         await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
       } else {
-        this.iceCandidateQueue.push(new RTCIceCandidate(candidate));
+        this.iceCandidateQueue.push(candidate);
       }
     } catch (e) {
       console.error("Error adding ice candidate", e);
@@ -59,14 +60,22 @@ export class CallSession {
   private async processQueuedCandidates() {
     while (this.iceCandidateQueue.length > 0) {
       const candidate = this.iceCandidateQueue.shift();
-      if (candidate) await this.pc.addIceCandidate(candidate);
+      if (candidate) {
+        try {
+          await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.warn("Failed candidate queue:", err);
+        }
+      }
     }
   }
 
-  async createOffer(localStream: MediaStream, userId: string) {
-    localStream.getTracks().forEach((track) => {
-      this.pc.addTrack(track, localStream);
-    });
+  async createOffer(localStream: MediaStream | null, userId: string) {
+    if (localStream) {
+      localStream.getTracks().forEach((track) => {
+        this.pc.addTrack(track, localStream);
+      });
+    }
 
     const callDoc = doc(db, "rooms", this.roomId, "call", this.callId);
     const offerCandidates = collection(callDoc, "offerCandidates");
@@ -113,10 +122,12 @@ export class CallSession {
     this.unsubs.push(unsubIce);
   }
 
-  async answerCall(localStream: MediaStream, userId: string) {
-    localStream.getTracks().forEach((track) => {
-      this.pc.addTrack(track, localStream);
-    });
+  async answerCall(localStream: MediaStream | null, userId: string) {
+    if (localStream) {
+      localStream.getTracks().forEach((track) => {
+        this.pc.addTrack(track, localStream);
+      });
+    }
 
     const callDoc = doc(db, "rooms", this.roomId, "call", this.callId);
     const offerCandidates = collection(callDoc, "offerCandidates");

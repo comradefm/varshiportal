@@ -2,14 +2,22 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { sendMessage, subscribeToMessages } from "@/firebase/chatService";
+import { sendMessage, subscribeToMessages, toggleReaction } from "@/firebase/chatService";
 import { getRoomData, getPartnerData, getUserRooms, createRoom, joinRoom } from "@/firebase/roomService";
 import { db } from "@/firebase/firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
 import { useCall } from "@/context/CallContext";
 import ChatBox from "@/components/ChatBox";
 import MessageBubble from "@/components/MessageBubble";
+import VoiceRecorder from "@/components/VoiceRecorder";
 import Link from "next/link";
+
+const THEMES = [
+  { id: "velvet", name: "Velvet Crimson 🌹", bg: "bg-[#0b0811]", accent: "border-rose-500/30", text: "text-rose-400" },
+  { id: "obsidian", name: "Midnight Obsidian 🖤", bg: "bg-[#07070b]", accent: "border-purple-500/30", text: "text-purple-400" },
+  { id: "cyber", name: "Cyber Rose 💖", bg: "bg-[#0f0716]", accent: "border-pink-500/30", text: "text-pink-400" },
+  { id: "amethyst", name: "Deep Amethyst 🔮", bg: "bg-[#0d091a]", accent: "border-indigo-500/30", text: "text-indigo-400" },
+];
 
 export default function Chat() {
   const { user, userData, loading, refreshUserData } = useAuth();
@@ -17,6 +25,7 @@ export default function Chat() {
 
   const [rooms, setRooms] = useState<any[]>([]);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [activeTheme, setActiveTheme] = useState(THEMES[0]);
   
   // Chat state
   const [messages, setMessages] = useState<any[]>([]);
@@ -24,7 +33,8 @@ export default function Chat() {
   const [sending, setSending] = useState(false);
   const [typingStatuses, setTypingStatuses] = useState<Record<string, boolean>>({});
   const [replyTo, setReplyTo] = useState<{ id: string; text: string; senderName: string } | null>(null);
-  
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+
   // Modals state
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinCode, setJoinCode] = useState("");
@@ -36,9 +46,11 @@ export default function Chat() {
 
   const lastClickTimeRef = useRef<number>(0);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { startCall, endCall, isCallActive, isCalling, acceptCall, isInitialized } = useCall();
-  // Double tap to exit
+  const { startCall, endCall, isCallActive, isCalling } = useCall();
+
+  // ── 2-Tap Panic Double-Tap Exit (Secret Chat -> Study Portal Decoy)
   const handleDoubleTapExit = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('a') || target.closest('input') || target.closest('textarea')) return;
@@ -102,10 +114,13 @@ export default function Chat() {
         })
       );
       setRooms(enriched);
+      if (enriched.length > 0 && !activeRoomId) {
+        setActiveRoomId(userData?.primaryRoomId || enriched[0].room_id);
+      }
     } catch (err) {
       console.error("Error loading rooms:", err);
     }
-  }, [user]);
+  }, [user, activeRoomId, userData?.primaryRoomId]);
 
   useEffect(() => {
     if (userData?.rooms) {
@@ -178,6 +193,52 @@ export default function Chat() {
     }
   };
 
+  const handleSendVoice = async (audioBase64: string, durationSec: number) => {
+    if (!user || !activeRoomId) return;
+    try {
+      const { sendMessage } = require("@/firebase/chatService");
+      await sendMessage(activeRoomId, user.uid, "", replyTo, {
+        url: audioBase64,
+        type: "audio",
+        duration: durationSec,
+      });
+      setShowVoiceRecorder(false);
+      setReplyTo(null);
+    } catch (err) {
+      console.error("Voice send failed:", err);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !user || !activeRoomId) return;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onloadend = async () => {
+        let url = reader.result as string;
+        const type = file.type.startsWith("video/") ? "video" : "image";
+        
+        // Smart image compression: shrink 5MB photos down to ~300KB
+        if (type === "image") {
+          const { compressImageDataUrl } = await import("@/lib/imageCompressor");
+          url = await compressImageDataUrl(url, 1200, 0.75);
+        }
+
+        try {
+          const { sendMessage } = require("@/firebase/chatService");
+          await sendMessage(activeRoomId, user.uid, "", replyTo, { url, type });
+          setReplyTo(null);
+        } catch (err) {
+          console.error("Media send failed:", err);
+        }
+      };
+    });
+    // Reset file input value so user can select same files again if needed
+    e.target.value = "";
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -214,8 +275,7 @@ export default function Chat() {
   };
 
   const formatLastSeen = (timestamp: any) => {
-    if (!timestamp) return ""; // Cleanest default
-    
+    if (!timestamp) return "";
     let date: Date;
     if (timestamp.toDate) date = timestamp.toDate();
     else if (timestamp instanceof Date) date = timestamp;
@@ -227,53 +287,51 @@ export default function Chat() {
 
     const now = new Date();
     const diff = now.getTime() - date.getTime();
-    
     if (diff < 60000) return "Active just now";
     if (diff < 3600000) return `Active ${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) {
-      if (now.getDate() === date.getDate()) {
-        return `Active ${Math.floor(diff / 3600000)}h ago`;
-      } else {
-        return "Active yesterday";
-      }
-    }
-    
-    // Within last week
-    if (diff < 604800000) {
-      return `Active ${date.toLocaleDateString([], { weekday: 'long' })}`;
-    }
-
+    if (diff < 86400000) return "Active today";
     return `Active ${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
   };
 
   if (loading || !userData) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#080810]">
-        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-[#07070b]">
+        <div className="w-8 h-8 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   const myNickname = userData?.nickname || userData?.username || "Me";
   const activeRoomData = rooms.find(r => r.room_id === activeRoomId);
-  const partnerNickname = activeRoomData?.partner?.nickname || activeRoomData?.partner?.username || "Partner";
+  const partnerNickname = activeRoomData?.partner?.nickname || activeRoomData?.partner?.username || "Love Partner 💖";
 
   return (
-    <div className="h-screen flex bg-[#080810] text-white overflow-hidden" onClick={handleDoubleTapExit} style={{ touchAction: 'manipulation' }}>
+    <div className={`h-screen flex ${activeTheme.bg} text-white overflow-hidden transition-colors duration-500`} onClick={handleDoubleTapExit} style={{ touchAction: 'manipulation' }}>
       
-      <aside className={`w-full md:w-80 lg:w-96 flex-shrink-0 flex flex-col border-r border-[#1a1a2e] bg-[#0d0d17] ${activeRoomId ? 'hidden md:flex' : 'flex'}`}>
-        <header className="px-5 py-5 border-b border-[#1a1a2e] flex items-center justify-between sticky top-0 z-10 bg-[#0d0d17]/95 backdrop-blur">
+      {/* Hidden File Input for Multi-Media Upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept="image/*,video/*"
+        multiple={true}
+        className="hidden"
+      />
+
+      {/* Sidebar Connections */}
+      <aside className={`w-full md:w-80 lg:w-96 flex-shrink-0 flex flex-col border-r border-rose-950/40 bg-[#090812] ${activeRoomId ? 'hidden md:flex' : 'flex'}`}>
+        <header className="px-5 py-5 border-b border-rose-950/40 flex items-center justify-between sticky top-0 z-10 bg-[#090812]/95 backdrop-blur">
           <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="w-8 h-8 rounded-lg bg-[#1c1c2e] hover:bg-[#27273a] flex items-center justify-center transition">
-              <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <Link href="/dashboard" className="w-8 h-8 rounded-xl bg-rose-950/30 border border-rose-800/30 flex items-center justify-center text-rose-400 hover:bg-rose-900/40 transition">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </Link>
-            <h1 className="text-xl font-bold tracking-tight">Messages</h1>
+            <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-rose-400 via-pink-400 to-red-400 bg-clip-text text-transparent">Secret Space 🌹</h1>
           </div>
           <button 
             onClick={() => setShowJoinModal(true)}
-            className="w-8 h-8 rounded-full bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 flex items-center justify-center transition"
+            className="w-8 h-8 rounded-full bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 flex items-center justify-center transition border border-rose-500/30"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -281,16 +339,31 @@ export default function Chat() {
           </button>
         </header>
 
+        {/* Theme Picker Bar */}
+        <div className="px-4 py-2 border-b border-rose-950/30 flex gap-2 overflow-x-auto no-scrollbar">
+          {THEMES.map((theme) => (
+            <button
+              key={theme.id}
+              onClick={() => setActiveTheme(theme)}
+              className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-wider transition-all whitespace-nowrap border ${
+                activeTheme.id === theme.id ? "bg-rose-600/30 border-rose-500 text-white shadow-lg shadow-rose-950" : "bg-black/20 border-white/10 text-zinc-400"
+              }`}
+            >
+              {theme.name}
+            </button>
+          ))}
+        </div>
+
         <div className="flex-1 overflow-y-auto w-full">
           {rooms.length === 0 ? (
             <div className="px-5 py-10 text-center">
-              <p className="text-sm text-zinc-400">No active connections.</p>
-              <button onClick={handleCreateRoom} disabled={modalLoading} className="mt-4 px-4 py-2 bg-[#1c1c2e] rounded-xl text-xs font-semibold text-white">
-                Create New Connection
+              <p className="text-sm text-rose-300/60">No active partner connected yet.</p>
+              <button onClick={handleCreateRoom} disabled={modalLoading} className="mt-4 px-5 py-2.5 bg-gradient-to-r from-rose-600 to-pink-600 rounded-xl text-xs font-bold text-white shadow-lg hover:brightness-110 transition">
+                Create Partner Connection 💖
               </button>
             </div>
           ) : (
-            <div className="space-y-0.5 p-2">
+            <div className="space-y-1 p-2">
               {rooms.map((room) => {
                 const isSelected = activeRoomId === room.room_id;
                 const pName = room.partner?.nickname || room.partner?.username || "Waiting for partner...";
@@ -298,16 +371,16 @@ export default function Chat() {
                   <button
                     key={room.room_id}
                     onClick={() => setActiveRoomId(room.room_id)}
-                    className={`w-full text-left px-4 py-3 rounded-2xl transition flex flex-col gap-1 ${isSelected ? 'bg-indigo-600/10' : 'hover:bg-[#1a1a2e]'}`}
+                    className={`w-full text-left px-4 py-3.5 rounded-2xl transition flex flex-col gap-1 ${isSelected ? 'bg-rose-600/15 border border-rose-500/30' : 'hover:bg-rose-950/20'}`}
                   >
                     <div className="flex items-center justify-between w-full">
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-semibold truncate ${isSelected ? 'text-indigo-400' : 'text-zinc-200'}`}>{pName}</span>
-                        {room.partner?.isOnline && !isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />}
+                        <span className={`text-sm font-bold truncate ${isSelected ? 'text-rose-400' : 'text-zinc-200'}`}>{pName}</span>
+                        {room.partner?.isOnline && <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />}
                       </div>
                     </div>
-                    <div className="flex items-center text-xs text-zinc-500">
-                      <span>Room Code: <span className="font-mono text-zinc-400">{room.room_code}</span></span>
+                    <div className="flex items-center text-[10px] text-zinc-500">
+                      <span>Room Code: <span className="font-mono text-rose-300">{room.room_code}</span></span>
                     </div>
                   </button>
                 );
@@ -317,54 +390,35 @@ export default function Chat() {
         </div>
       </aside>
 
-      <main className={`flex-1 flex flex-col min-w-0 bg-[#080810] relative ${!activeRoomId ? 'hidden md:flex' : 'flex'}`}>
+      {/* Main Secret Chat Area */}
+      <main className={`flex-1 flex flex-col min-w-0 relative ${!activeRoomId ? 'hidden md:flex' : 'flex'}`}>
         {!activeRoomId ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-5">
-            <h2 className="text-xl font-bold text-white mb-2">Your Messages</h2>
-            <p className="text-sm text-zinc-500 max-w-sm">Select a conversation to start chatting.</p>
+            <h2 className="text-2xl font-bold text-rose-300 mb-2">Secret Lovers Space 💖</h2>
+            <p className="text-sm text-zinc-500 max-w-sm">Select a partner room to start texting & telecasting live video.</p>
           </div>
         ) : (
           <>
-            <header className="flex-shrink-0 bg-[#080810]/95 backdrop-blur border-b border-[#1a1a2e] px-4 md:px-6 py-4 flex items-center justify-between sticky top-0 z-10 w-full">
+            {/* Header */}
+            <header className="flex-shrink-0 bg-[#090812]/95 backdrop-blur border-b border-rose-950/40 px-4 md:px-6 py-4 flex items-center justify-between sticky top-0 z-10 w-full">
               <div className="flex items-center gap-3">
-                <button onClick={() => setActiveRoomId(null)} className="md:hidden w-8 h-8 rounded-lg bg-[#1c1c2e] flex items-center justify-center">
-                  <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <button onClick={() => setActiveRoomId(null)} className="md:hidden w-8 h-8 rounded-lg bg-rose-950/40 flex items-center justify-center text-rose-300">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
                 <div>
                   <div className="flex items-center gap-3">
                     <h2 className="font-bold text-white text-base truncate">{partnerNickname}</h2>
-                    {activeRoomData?.partner && partnerOnline && (
-                      <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                    {partnerOnline && (
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
                     )}
-                    <button 
-                      onClick={async () => {
-                        if (!user || !activeRoomId) return;
-                        const { doc, updateDoc } = await import('firebase/firestore');
-                        const userRef = doc(db, "users", user.uid);
-                        await updateDoc(userRef, {
-                          primaryRoomId: userData?.primaryRoomId === activeRoomId ? null : activeRoomId
-                        });
-                      }}
-                      className={`p-1.5 rounded-lg transition-all ${userData?.primaryRoomId === activeRoomId ? 'bg-amber-500/20 text-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-zinc-500 hover:text-zinc-300'}`}
-                      title={userData?.primaryRoomId === activeRoomId ? "Unpin Partner" : "Pin Partner (Always-on)"}
-                    >
-                      <svg className="w-4 h-4" fill={userData?.primaryRoomId === activeRoomId ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                      </svg>
-                    </button>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     {partnerOnline ? (
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                        <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Active now</span>
-                      </div>
+                      <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Active Now</span>
                     ) : (
-                      <span className="text-[10px] text-zinc-400 font-medium tracking-wide">
-                        {formatLastSeen(partnerLastActive) || "Offline"}
-                      </span>
+                      <span className="text-[10px] text-zinc-500 font-medium">{formatLastSeen(partnerLastActive) || "Offline"}</span>
                     )}
                   </div>
                 </div>
@@ -374,22 +428,17 @@ export default function Chat() {
                 <button 
                   onClick={() => isCallActive ? endCall() : (activeRoomId && startCall(activeRoomId))}
                   disabled={isCalling}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition shadow-lg ${isCallActive ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30' : 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-600/30'}`}
-                  title={isCallActive ? "End Study Session" : "Start Study Session"}
+                  className={`w-10 h-10 rounded-2xl flex items-center justify-center transition shadow-lg border ${isCallActive ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 hover:bg-rose-500/30' : 'bg-rose-600/20 text-rose-300 border-rose-500/30 hover:bg-rose-600/30'}`}
+                  title="Toggle Video Telecast"
                 >
-                  {isCallActive ? (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  )}
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
                 </button>
               </div>
             </header>
 
+            {/* Chat Messages */}
             <ChatBox>
               <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-1 mt-auto">
                 {messages.map((msg) => {
@@ -397,97 +446,133 @@ export default function Chat() {
                   return (
                     <div key={msg.message_id} id={`msg-${msg.message_id}`} className="group relative">
                       <MessageBubble
+                        id={msg.message_id}
                         text={msg.message_text}
                         senderName={isOwn ? myNickname : partnerNickname}
                         isOwnMessage={isOwn}
                         replyTo={msg.reply_to}
                         status={isOwn ? msg.status : undefined}
+                        mediaUrl={msg.media_url}
+                        mediaType={msg.media_type}
+                        duration={msg.duration}
+                        reactions={msg.reactions}
+                        onToggleReaction={(emoji) => toggleReaction(msg.message_id, user!.uid, emoji)}
+                        onReplyTrigger={() => setReplyTo({ id: msg.message_id, text: msg.message_text || "Attachment", senderName: isOwn ? myNickname : partnerNickname })}
                         onReplyClick={(id) => {
                           const el = document.getElementById(`msg-${id}`);
                           if (el) {
                             el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            el.classList.add('bg-indigo-500/10');
-                            setTimeout(() => el.classList.remove('bg-indigo-500/10'), 2000);
                           }
                         }}
                       />
-                      <button 
-                        onClick={() => setReplyTo({ id: msg.message_id, text: msg.message_text, senderName: isOwn ? myNickname : partnerNickname })}
-                        className={`absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full bg-[#1c1c2e] text-zinc-400 ${isOwn ? 'right-[80%]' : 'left-[80%]'}`}
-                      >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                        </svg>
-                      </button>
                     </div>
                   );
                 })}
 
+                {/* Typing status dots */}
                 {Object.entries(typingStatuses).some(([uid, isTyping]) => uid !== user?.uid && isTyping) && (
-                  <div className="flex items-center gap-2 px-2 py-1 animate-pulse">
-                    <span className="text-[10px] text-zinc-500 font-medium italic">{partnerNickname} is typing...</span>
+                  <div className="flex items-center gap-2 px-3 py-1.5 animate-pulse">
+                    <span className="text-xs text-rose-300 font-medium italic">{partnerNickname} is typing... 💕</span>
                   </div>
                 )}
                 <div ref={bottomRef} className="h-4" />
               </div>
             </ChatBox>
 
-            <footer className="footer bg-[#0d0d17]/80 backdrop-blur border-t border-[#1a1a2e] px-4 md:px-6 py-4">
+            {/* Footer / Input Bar */}
+            <footer className="bg-[#090812]/90 backdrop-blur border-t border-rose-950/40 px-4 md:px-6 py-4">
               <div className="max-w-4xl mx-auto w-full flex flex-col gap-2">
+                {/* Reply Quote Banner */}
                 {replyTo && (
-                  <div className="flex items-center justify-between bg-[#151523] border border-[#27273a] rounded-xl px-4 py-2.5 mb-2 animate-in slide-in-from-bottom-2 duration-200">
-                    <div className="flex flex-col min-w-0 border-l-2 border-indigo-500 pl-3">
-                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                        </svg>
+                  <div className="flex items-center justify-between bg-[#151122] border border-rose-500/30 rounded-xl px-4 py-2 mb-1 animate-in slide-in-from-bottom-2 duration-200">
+                    <div className="flex flex-col min-w-0 border-l-2 border-rose-500 pl-3">
+                      <span className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">
                         Replying to {replyTo.senderName}
                       </span>
-                      <p className="text-xs text-zinc-400 truncate mt-0.5">{replyTo.text}</p>
+                      <p className="text-xs text-zinc-300 truncate mt-0.5">{replyTo.text}</p>
                     </div>
-                    <button onClick={() => setReplyTo(null)} className="text-zinc-500 hover:text-white p-1 transition-colors ml-4">
+                    <button onClick={() => setReplyTo(null)} className="text-zinc-500 hover:text-white p-1 ml-4">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
                   </div>
                 )}
-                <div className="flex items-center gap-3">
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Type a message…"
-                    className="flex-1 bg-[#151523] border border-[#27273a] text-white rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:border-indigo-500 transition"
+
+                {/* Voice Recorder Overlay or Standard Input Bar */}
+                {showVoiceRecorder ? (
+                  <VoiceRecorder
+                    onSendVoice={handleSendVoice}
+                    onCancel={() => setShowVoiceRecorder(false)}
                   />
-                  <button onClick={handleSend} disabled={!text.trim() || sending} className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
-                  </button>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {/* Media upload button */}
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-11 h-11 rounded-2xl bg-rose-950/40 border border-rose-800/30 flex items-center justify-center text-rose-300 hover:bg-rose-900/50 transition active:scale-95"
+                      title="Send Image / Video"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+
+                    {/* Mic button for Voice Note */}
+                    <button
+                      onClick={() => setShowVoiceRecorder(true)}
+                      className="w-11 h-11 rounded-2xl bg-rose-950/40 border border-rose-800/30 flex items-center justify-center text-rose-300 hover:bg-rose-900/50 transition active:scale-95"
+                      title="Record Voice Note"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                    </button>
+
+                    {/* Text Input Box */}
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Send a secret message… 💕"
+                      className="flex-1 bg-[#141021] border border-rose-500/25 text-white rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-rose-500 transition placeholder-zinc-500"
+                    />
+
+                    {/* Send Button */}
+                    <button
+                      onClick={handleSend}
+                      disabled={!text.trim() || sending}
+                      className="w-11 h-11 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-rose-950 hover:brightness-110 active:scale-95 disabled:opacity-40 transition"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </div>
             </footer>
           </>
         )}
       </main>
 
+      {/* Join/Create Modal */}
       {showJoinModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0f0f18] border border-[#1a1a2e] rounded-3xl w-full max-w-md p-6 relative">
+          <div className="bg-[#0e0a18] border border-rose-500/30 rounded-3xl w-full max-w-md p-6 relative shadow-2xl">
             <button onClick={() => setShowJoinModal(false)} className="absolute top-5 right-5 text-zinc-400">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            <h2 className="text-xl font-bold text-white mb-6">Create / Join Room</h2>
+            <h2 className="text-xl font-bold text-rose-300 mb-6">Create / Join Secret Room 🌹</h2>
             <div className="space-y-4">
-              <button onClick={handleCreateRoom} className="w-full py-3 bg-indigo-600/10 text-indigo-400 rounded-xl font-medium">Generate Code</button>
+              <button onClick={handleCreateRoom} className="w-full py-3.5 bg-gradient-to-r from-rose-600 to-pink-600 text-white font-bold rounded-xl shadow-lg">Generate Room Code</button>
               <div className="flex gap-2">
-                <input value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="RM-XXXX" className="flex-1 bg-[#0a0a0f] border border-[#27272a] text-white rounded-xl px-4 text-center" />
-                <button onClick={handleJoinRoom} className="px-5 py-3 bg-emerald-600 text-white rounded-xl font-semibold">Join</button>
+                <input value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="RM-XXXX" className="flex-1 bg-[#120e20] border border-rose-500/30 text-white rounded-xl px-4 text-center tracking-widest font-mono" />
+                <button onClick={handleJoinRoom} className="px-5 py-3 bg-rose-700 text-white rounded-xl font-semibold">Join</button>
               </div>
             </div>
           </div>

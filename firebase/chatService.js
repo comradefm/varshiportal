@@ -13,24 +13,53 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-export const sendMessage = async (roomId, senderId, messageText, replyTo = null) => {
+export const sendMessage = async (roomId, senderId, messageText, replyTo = null, mediaData = null) => {
   try {
     const messageData = {
       room_id: roomId,
       sender_id: senderId,
-      message_text: messageText.trim(),
+      message_text: messageText ? messageText.trim() : "",
       timestamp: serverTimestamp(),
       status: "sent", // sent, seen
+      reactions: {},
     };
 
     if (replyTo) {
       messageData.reply_to = replyTo; // { id, text, senderName }
     }
 
+    if (mediaData) {
+      messageData.media_url = mediaData.url;
+      messageData.media_type = mediaData.type; // 'image', 'video', 'audio'
+      if (mediaData.duration) {
+        messageData.duration = mediaData.duration;
+      }
+    }
+
     await addDoc(collection(db, "messages"), messageData);
   } catch (error) {
     console.error("Error sending message:", error);
     throw error;
+  }
+};
+
+export const toggleReaction = async (messageId, userId, emoji) => {
+  try {
+    const msgRef = doc(db, "messages", messageId);
+    const snap = await getDoc(msgRef);
+    if (snap.exists()) {
+      const currentData = snap.data();
+      const currentReactions = currentData.reactions || {};
+      const newReactions = { ...currentReactions };
+      if (newReactions[userId] === emoji) {
+        delete newReactions[userId];
+      } else {
+        newReactions[userId] = emoji;
+      }
+      await updateDoc(msgRef, { reactions: newReactions });
+    }
+  } catch (error) {
+    console.error("Error toggling reaction:", error);
   }
 };
 
@@ -90,8 +119,6 @@ export const markMessagesAsSeen = async (roomId, currentUserId) => {
 
 export const subscribeToMessages = (roomId, callback) => {
   const messagesRef = collection(db, "messages");
-  // Removed orderBy to avoid requiring a composite index in Firestore.
-  // We will sort them on the client side instead.
   const q = query(
     messagesRef,
     where("room_id", "==", roomId)
@@ -117,3 +144,4 @@ export const subscribeToMessages = (roomId, callback) => {
 
   return unsubscribe;
 };
+
