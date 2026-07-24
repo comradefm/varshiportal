@@ -1,9 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { onAuthStateChanged, User } from "firebase/auth";
+import { supabase } from "@/lib/supabaseClient";
+import { getUserData, updateUserPresence } from "@/lib/supabaseService";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/firebase/firebaseConfig";
-import { subscribeToUserData, updateUserPresence } from "@/firebase/firestoreService";
+import { subscribeToUserData } from "@/firebase/firestoreService";
 
 interface UserData {
   uid?: string;
@@ -18,7 +20,7 @@ interface UserData {
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: any;
   userData: UserData | null;
   loading: boolean;
   refreshUserData: (uid: string) => Promise<void>;
@@ -27,55 +29,73 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Still keep refreshUserData for manual calls if needed, but it's less critical now
   const refreshUserData = useCallback(async (uid: string) => {
-    // This is now mostly handled by the subscription, but we can leave it for fallback
+    try {
+      const data = await getUserData(uid);
+      if (data) setUserData(data);
+    } catch (err) {
+      console.error("Error refreshing user data:", err);
+    }
   }, []);
 
   useEffect(() => {
-    let unsubUser: (() => void) | null = null;
+    let unsubFirebase: (() => void) | null = null;
+    let unsubFirestoreDoc: (() => void) | null = null;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (unsubUser) {
-        unsubUser();
-        unsubUser = null;
-      }
-
-      setUser(firebaseUser);
-
-      if (firebaseUser) {
-        unsubUser = subscribeToUserData(firebaseUser.uid, (data: any) => {
-          setUserData(data);
-          setLoading(false);
-        });
-      } else {
-        setUserData(null);
+    // 1. Supabase Auth listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const sbUser = {
+          uid: session.user.id,
+          id: session.user.id,
+          email: session.user.email,
+        };
+        setUser(sbUser);
+        const profile = await getUserData(session.user.id);
+        setUserData(profile || { uid: session.user.id, email: session.user.email, username: session.user.email?.split("@")[0] });
         setLoading(false);
+      } else {
+        // Fallback to Firebase Auth
+        unsubFirebase = onAuthStateChanged(auth, (fbUser) => {
+          if (fbUser) {
+            const mappedUser = { uid: fbUser.uid, id: fbUser.uid, email: fbUser.email };
+            setUser(mappedUser);
+            unsubFirestoreDoc = subscribeToUserData(fbUser.uid, (data: any) => {
+              setUserData(data);
+              setLoading(false);
+            });
+          } else {
+            setUser(null);
+            setUserData(null);
+            setLoading(false);
+          }
+        });
       }
     });
 
     return () => {
-      unsubscribeAuth();
-      if (unsubUser) unsubUser();
+      authListener?.subscription.unsubscribe();
+      if (unsubFirebase) unsubFirebase();
+      if (unsubFirestoreDoc) unsubFirestoreDoc();
     };
   }, []);
 
-  // Presence Tracking (Heartbeat & Visibility)
+  // Presence Tracking
   useEffect(() => {
     if (!user) return;
-    
+    const currentUid = user.uid || user.id;
+    if (!currentUid) return;
+
     const update = (online: boolean) => {
-      console.log(`[Presence] Updating status to ${online ? 'online' : 'offline'}`);
-      updateUserPresence(user.uid, online);
+      updateUserPresence(currentUid, online);
     };
 
     update(true);
 
-    // Heartbeat every 2 mins to keep lastActive fresh
     const heartbeat = setInterval(() => {
       if (document.visibilityState === "visible") {
         update(true);

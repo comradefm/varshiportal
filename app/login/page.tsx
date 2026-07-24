@@ -2,8 +2,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { signInWithGoogle } from "@/firebase/authService";
-import { getUserData } from "@/firebase/firestoreService";
+import { signInWithGoogleSupabase } from "@/lib/supabaseAuth";
+import { getUserData } from "@/lib/supabaseService";
 
 export default function Login() {
   const { user, loading } = useAuth();
@@ -13,15 +13,16 @@ export default function Login() {
 
   useEffect(() => {
     if (!loading && user) {
-      getUserData(user.uid).then((data) => {
+      const uid = (user as any).id || (user as any).uid;
+      getUserData(uid).then((data) => {
         if (data && data.username) {
-          router.replace("/dashboard");
+          router.replace("/chat");
         } else {
           router.replace("/setup");
         }
       }).catch((err) => {
-        console.error("Error fetching user data:", err);
-        setErrorMessage("Connected, but could not load profile data. Please check Firebase domain settings.");
+        console.error("Error fetching user profile:", err);
+        router.replace("/chat");
       });
     }
   }, [user, loading, router]);
@@ -30,57 +31,44 @@ export default function Login() {
     setErrorMessage(null);
     setIsLoggingIn(true);
     try {
-      const firebaseUser = await signInWithGoogle();
-      if (firebaseUser) {
-        const data = await getUserData(firebaseUser.uid);
-        if (data && data.username) {
-          router.replace("/dashboard");
-        } else {
-          router.replace("/setup");
-        }
-      }
+      await signInWithGoogleSupabase();
     } catch (err: any) {
       console.error("Sign in failed:", err);
-      if (err?.code === "auth/unauthorized-domain") {
-        setErrorMessage("Firebase domain unauthorized! Please add this domain to Firebase Console -> Auth -> Authorized Domains.");
-      } else {
-        setErrorMessage(err?.message || "Sign in failed. Please check browser popups or network settings.");
-      }
-    } finally {
+      setErrorMessage(err?.message || "Sign in failed. Please check popup or redirect settings.");
       setIsLoggingIn(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
-        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-[#07070b]">
+        <div className="w-8 h-8 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#0a0a0f] relative overflow-hidden">
+    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#07070b] relative overflow-hidden">
       {/* Ambient glow */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-violet-600/8 rounded-full blur-[100px] pointer-events-none" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-rose-600/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-pink-600/8 rounded-full blur-[100px] pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-sm animate-fade-in">
         {/* Logo */}
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 mb-4">
-            <svg className="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-rose-600/20 border border-rose-500/30 mb-4 shadow-xl">
+            <svg className="w-8 h-8 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">StudyPortal</h1>
-          <p className="text-zinc-400 mt-2 text-sm">Your intelligent study companion</p>
+          <h1 className="text-3xl font-bold text-white tracking-tight bg-gradient-to-r from-rose-400 via-pink-400 to-red-400 bg-clip-text text-transparent">Secret Space 🌹</h1>
+          <p className="text-zinc-400 mt-2 text-sm">Made with Luv</p>
         </div>
 
         {/* Card */}
-        <div className="bg-[#13131a] border border-[#27272a] rounded-2xl p-8 shadow-2xl">
+        <div className="bg-[#110e1a] border border-rose-500/20 rounded-3xl p-8 shadow-2xl backdrop-blur-md">
           <h2 className="text-lg font-semibold text-white mb-1">Welcome back</h2>
-          <p className="text-sm text-zinc-500 mb-8">Sign in to continue your studies</p>
+          <p className="text-sm text-zinc-400 mb-8">Sign in to enter your secret space</p>
 
           {errorMessage && (
             <div className="mb-6 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center leading-relaxed">
@@ -104,11 +92,11 @@ export default function Login() {
                 <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
               </svg>
             )}
-            {isLoggingIn ? "Signing in..." : "Continue with Google"}
+            {isLoggingIn ? "Redirecting to Google..." : "Continue with Google"}
           </button>
 
           <p className="text-center text-xs text-zinc-600 mt-6">
-            By signing in you agree to our Terms of Service
+            Private & Protected Space
           </p>
         </div>
       </div>
