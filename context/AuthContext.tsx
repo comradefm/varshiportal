@@ -3,9 +3,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { getUserData, updateUserPresence } from "@/lib/supabaseService";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/firebase/firebaseConfig";
-import { subscribeToUserData } from "@/firebase/firestoreService";
 
 interface UserData {
   uid?: string;
@@ -43,10 +40,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    let unsubFirebase: (() => void) | null = null;
-    let unsubFirestoreDoc: (() => void) | null = null;
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const sbUser = {
+          uid: session.user.id,
+          id: session.user.id,
+          email: session.user.email,
+        };
+        setUser(sbUser);
+        getUserData(session.user.id).then((profile) => {
+          setUserData(profile || { uid: session.user.id, email: session.user.email, username: session.user.email?.split("@")[0] });
+          setLoading(false);
+        });
+      } else {
+        setLoading(false);
+      }
+    });
 
-    // 1. Supabase Auth listener
+    // 100% Pure Supabase Auth Listener
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const sbUser = {
@@ -59,28 +71,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserData(profile || { uid: session.user.id, email: session.user.email, username: session.user.email?.split("@")[0] });
         setLoading(false);
       } else {
-        // Fallback to Firebase Auth
-        unsubFirebase = onAuthStateChanged(auth, (fbUser) => {
-          if (fbUser) {
-            const mappedUser = { uid: fbUser.uid, id: fbUser.uid, email: fbUser.email };
-            setUser(mappedUser);
-            unsubFirestoreDoc = subscribeToUserData(fbUser.uid, (data: any) => {
-              setUserData(data);
-              setLoading(false);
-            });
-          } else {
-            setUser(null);
-            setUserData(null);
-            setLoading(false);
-          }
-        });
+        setUser(null);
+        setUserData(null);
+        setLoading(false);
       }
     });
 
     return () => {
       authListener?.subscription.unsubscribe();
-      if (unsubFirebase) unsubFirebase();
-      if (unsubFirestoreDoc) unsubFirestoreDoc();
     };
   }, []);
 

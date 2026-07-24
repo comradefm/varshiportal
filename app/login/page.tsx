@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { signInWithGoogleSupabase } from "@/lib/supabaseAuth";
-import { signInWithGoogle as signInWithGoogleFirebase } from "@/firebase/authService";
 import { getUserData, createUserData } from "@/lib/supabaseService";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -33,31 +32,11 @@ export default function Login() {
     setErrorMessage(null);
     setIsLoggingIn(true);
     try {
-      // 1. Try Supabase Google OAuth
+      // Pure Supabase Google OAuth Sign-In
       await signInWithGoogleSupabase();
-    } catch (err1: any) {
-      console.warn("Supabase Google Sign-in fallback to Firebase:", err1);
-      try {
-        // 2. Fallback to Firebase Google Sign-In
-        const fbUser = await signInWithGoogleFirebase();
-        if (fbUser) {
-          await createUserData(fbUser.uid, {
-            username: fbUser.displayName?.toLowerCase().replace(/\s+/g, "_") || fbUser.email?.split("@")[0],
-            nickname: fbUser.displayName || "Love Partner",
-            email: fbUser.email,
-            isOnline: true,
-          });
-          router.replace("/chat");
-        }
-      } catch (err2: any) {
-        console.error("All Google sign-in attempts failed:", err2);
-        if (err2?.code === "auth/unauthorized-domain") {
-          setErrorMessage("Please authorize 'varshicombinedstudies.netlify.app' in Firebase Console -> Auth -> Authorized Domains.");
-        } else {
-          setErrorMessage(err2?.message || "Google Sign-in failed. Please try again.");
-        }
-      }
-    } finally {
+    } catch (err: any) {
+      console.error("Supabase Google Sign-In error:", err);
+      setErrorMessage(err?.message || "Google Sign-In failed. Please check Supabase Auth settings.");
       setIsLoggingIn(false);
     }
   };
@@ -91,7 +70,7 @@ export default function Login() {
         {/* Card */}
         <div className="bg-[#110e1a] border border-rose-500/20 rounded-3xl p-8 shadow-2xl backdrop-blur-md">
           <h2 className="text-lg font-semibold text-white mb-1">Welcome back</h2>
-          <p className="text-xs text-zinc-400 mb-8">Sign in with Google to enter your secret space</p>
+          <p className="text-xs text-zinc-400 mb-8">Sign in with Supabase Google Login to enter</p>
 
           {errorMessage && (
             <div className="mb-6 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center leading-relaxed">
@@ -99,7 +78,7 @@ export default function Login() {
             </div>
           )}
 
-          {/* Primary Google Sign-In Button */}
+          {/* Primary Supabase Google Sign-In Button */}
           <button
             id="google-signin-btn"
             onClick={handleGoogleSignIn}
@@ -116,11 +95,11 @@ export default function Login() {
                 <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
               </svg>
             )}
-            {isLoggingIn ? "Signing in..." : "Continue with Google"}
+            {isLoggingIn ? "Connecting to Supabase..." : "Continue with Google (Supabase)"}
           </button>
 
           <p className="text-center text-[10px] text-zinc-500 mt-6 leading-relaxed">
-            Automatically connects both partners using Google Account
+            Powered by Supabase Auth & Realtime Database
           </p>
         </div>
       </div>
