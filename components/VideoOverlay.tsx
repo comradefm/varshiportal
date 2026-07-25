@@ -2,11 +2,13 @@
 import React from 'react';
 import { useCall } from '@/context/CallContext';
 import { useAuth } from '@/context/AuthContext';
+import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 
 const VideoOverlay = () => {
   const { localStream, remoteStream, isCalling, endCall, connectionState } = useCall();
   const { userData } = useAuth();
+  const pathname = usePathname();
   const [playFailed, setPlayFailed] = React.useState(false);
 
   const attachStream = (el: HTMLVideoElement | null, stream: MediaStream | null, name: string) => {
@@ -21,6 +23,8 @@ const VideoOverlay = () => {
     }
   };
 
+  // Only show video telecast on the /chat page
+  if (pathname !== '/chat') return null;
   if (!(remoteStream || isCalling || localStream)) return null;
 
   const getStatusText = () => {

@@ -1,8 +1,7 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { CallSession } from '@/firebase/callService';
-import { db } from '@/firebase/firebaseConfig';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { CallSession } from '@/lib/callService';
+import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from './AuthContext';
 import { usePathname } from 'next/navigation';
 
@@ -54,7 +53,6 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       sessionStorage.setItem('study_portal_initialized', 'true');
     } catch (err) {
       console.error("Media init failed:", err);
-      // Fallback mark initialized so signaling proceeds
       setIsInitialized(true);
     }
   };
@@ -161,29 +159,27 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
-  // 1. Listen for incoming calls across user's rooms
+  // 1. Listen for incoming calls across user's rooms via Supabase
   useEffect(() => {
     if (!user || !userData?.rooms || isCallActive || isCalling) return;
     const rooms = userData.rooms;
     if (rooms.length === 0) return;
 
-    const unsubs = rooms.map((roomId: string) => {
-      const callDoc = doc(db, "rooms", roomId, "call", "current_call");
-      return onSnapshot(callDoc, (snapshot) => {
-        const data = snapshot.data();
-        if (data?.offer && !data.answer) {
-          const isFromPartner = data.offer.senderId !== user.uid;
-          const createdAt = data.offer.createdAt?.toMillis() || Date.now();
+    const channels = rooms.map((roomId: string) => {
+      const channel = supabase.channel(`call_${roomId}`);
+      channel.on("broadcast", { event: "offer" }, ({ payload }: any) => {
+        if (payload?.senderId && payload.senderId !== user.uid) {
+          const createdAt = payload.createdAt || Date.now();
           const isRecent = (Date.now() - createdAt) < 300000;
-          if (isFromPartner && isRecent) {
-             setIncomingCall({ roomId, fromName: "Partner" });
+          if (isRecent) {
+            setIncomingCall({ roomId, fromName: "Partner" });
           }
-        } else if (!data?.offer) {
-          setIncomingCall(prev => prev?.roomId === roomId ? null : prev);
         }
-      });
+      }).subscribe();
+      return channel;
     });
-    return () => unsubs.forEach((unsub: any) => unsub());
+
+    return () => channels.forEach((ch: any) => supabase.removeChannel(ch));
   }, [user, userData?.rooms, isCallActive, isCalling]);
 
   // 2. Auto-Accept incoming calls immediately without requiring user permission
@@ -209,9 +205,9 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     const checkPartnerAndStart = async () => {
        if (isCallActive || isCalling || incomingCall) return;
        try {
-         const { getPartnerData } = await import('@/firebase/roomService');
+         const { getPartnerData } = await import('@/lib/supabaseService');
          const partner = await getPartnerData(targetRoomId, user.uid);
-         if (partner?.uid && partner.isOnline && user.uid < partner.uid) {
+         if (partner?.user_id && partner.isOnline && user.uid < partner.user_id) {
             startCall(targetRoomId);
          }
        } catch (err) {

@@ -2,10 +2,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { sendMessage, subscribeToMessages, toggleReaction } from "@/firebase/chatService";
-import { getRoomData, getPartnerData, getUserRooms, createRoom, joinRoom } from "@/firebase/roomService";
-import { db } from "@/firebase/firebaseConfig";
-import { doc, onSnapshot } from "firebase/firestore";
+import { sendMessage, subscribeToMessages, toggleReaction, subscribeToTypingStatus, markMessagesAsSeen, setTypingStatus } from "@/lib/supabaseService";
+import { getRoomData, getPartnerData, getUserRooms, createRoom, joinRoom } from "@/lib/supabaseService";
 import { useCall } from "@/context/CallContext";
 import ChatBox from "@/components/ChatBox";
 import MessageBubble from "@/components/MessageBubble";
@@ -74,15 +72,16 @@ export default function Chat() {
       return;
     }
     const room = rooms.find(r => r.room_id === activeRoomId);
-    if (!room?.partner?.uid) {
+    const partnerId = room?.partner?.uid || room?.partner?.user_id;
+    if (!partnerId) {
       setPartnerOnline(false);
       setPartnerLastActive(null);
       return;
     }
 
-    const unsub = onSnapshot(doc(db, "users", room.partner.uid), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
+    const { subscribeToUserData } = require("@/lib/supabaseService");
+    const unsub = subscribeToUserData(partnerId, (data: any) => {
+      if (data) {
         setPartnerOnline(!!data.isOnline);
         setPartnerLastActive(data.lastActive);
       } else {
@@ -91,7 +90,7 @@ export default function Chat() {
       }
     });
 
-    return () => unsub();
+    return () => { if (unsub) unsub(); };
   }, [activeRoomId, rooms]);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -108,7 +107,7 @@ export default function Chat() {
       const userRooms = await getUserRooms(user.uid);
       const enriched = await Promise.all(
         userRooms.map(async (r) => {
-          const { getPartnerData } = await import("@/firebase/roomService");
+          const { getPartnerData } = await import("@/lib/supabaseService");
           const partner = await getPartnerData(r.room_id, user.uid);
           return { ...r, partner };
         })
@@ -133,7 +132,7 @@ export default function Chat() {
     setMessages([]);
     setTypingStatuses({});
     
-    const { subscribeToTypingStatus, markMessagesAsSeen } = require("@/firebase/chatService");
+    // subscribeToTypingStatus & markMessagesAsSeen imported from top-level supabaseService
     
     const unsubMessages = subscribeToMessages(activeRoomId, (msgs: any[]) => {
       setMessages(msgs);
@@ -151,7 +150,7 @@ export default function Chat() {
 
   useEffect(() => {
     if (!activeRoomId || !user) return;
-    const { setTypingStatus } = require("@/firebase/chatService");
+    // setTypingStatus imported from top-level supabaseService
 
     if (text.length > 0) {
       setTypingStatus(activeRoomId, user.uid, true);
@@ -180,7 +179,7 @@ export default function Chat() {
     setText("");
     setReplyTo(null);
     try {
-      const { sendMessage, setTypingStatus } = require("@/firebase/chatService");
+      // sendMessage & setTypingStatus imported from top-level supabaseService
       await sendMessage(activeRoomId, user.uid, msg, replyContext);
       await setTypingStatus(activeRoomId, user.uid, false);
     } catch (err) {
@@ -196,7 +195,7 @@ export default function Chat() {
   const handleSendVoice = async (audioBase64: string, durationSec: number) => {
     if (!user || !activeRoomId) return;
     try {
-      const { sendMessage } = require("@/firebase/chatService");
+      // sendMessage imported from top-level supabaseService
       await sendMessage(activeRoomId, user.uid, "", replyTo, {
         url: audioBase64,
         type: "audio",
@@ -227,7 +226,7 @@ export default function Chat() {
         }
 
         try {
-          const { sendMessage } = require("@/firebase/chatService");
+          // sendMessage imported from top-level supabaseService
           await sendMessage(activeRoomId, user.uid, "", replyTo, { url, type });
           setReplyTo(null);
         } catch (err) {

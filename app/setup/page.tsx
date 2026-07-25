@@ -2,8 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { createUserData } from "@/firebase/firestoreService";
-import { seedDefaultCourses } from "@/firebase/firestoreService";
+import { createUserData, seedDefaultCourses } from "@/lib/supabaseService";
 import { hashPin } from "@/lib/pinUtils";
 
 const EXAM_SUBJECTS: Record<string, string[]> = {

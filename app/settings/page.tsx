@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { signOut } from "@/firebase/authService";
+import { signOutSupabase as signOut } from "@/lib/supabaseAuth";
 
 export default function Settings() {
   const { user, userData, loading } = useAuth();

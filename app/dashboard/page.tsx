@@ -14,7 +14,7 @@ import {
   deleteNote,
   seedDefaultCourses,
   seedCurriculum,
-} from "@/firebase/firestoreService";
+} from "@/lib/supabaseService";
 
 import { useCall } from "@/context/CallContext";
 import WelcomeOverlay from "@/components/WelcomeOverlay";
@@ -355,7 +355,7 @@ export default function Dashboard() {
     if (!user) return;
     const newValue = !userData?.alwaysOnVideo;
     try {
-      const { updateAlwaysOnVideo } = await import("@/firebase/firestoreService");
+      const { updateAlwaysOnVideo } = await import("@/lib/supabaseService");
       await updateAlwaysOnVideo(user.uid, newValue);
     } catch (err) {
       console.error("Toggle failed:", err);
